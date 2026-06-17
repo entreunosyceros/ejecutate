@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
                                QComboBox, QSpinBox, QColorDialog, QGridLayout, QGroupBox, QTabWidget,
                                QSystemTrayIcon, QMenu, QListWidget, QListWidgetItem, QTreeWidget,
                                QTreeWidgetItem, QInputDialog, QAbstractItemView, QTabBar, QToolTip,
-                               QLineEdit, QCheckBox, QScrollArea, QToolButton, QStackedWidget, QGraphicsOpacityEffect)
+                               QLineEdit, QCheckBox, QScrollArea, QToolButton, QStackedWidget, QGraphicsOpacityEffect, QSizePolicy)
 from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QSettings, QPoint, QThread, Signal, QProcess
 from PySide6.QtCore import QSize
 from PySide6.QtCore import QObject
@@ -3050,6 +3050,8 @@ class FileExplorerWidget(QTreeWidget):
             
             # Actualizar la barra de herramientas de navegación
             self.update_navigation_toolbar()
+            if self.parent_editor and hasattr(self.parent_editor, "_update_header_workspace_path"):
+                self.parent_editor._update_header_workspace_path(path)
             
         except PermissionError:
             error_item = QTreeWidgetItem(self)
@@ -4281,6 +4283,49 @@ class TabbedCodeEditor(QTabWidget):
         self.setCurrentIndex(tab_index)
         
         return tab_index, editor
+
+    def _is_reusable_empty_tab(self, tab_index: int) -> bool:
+        """Pestaña sin archivo, sin cambios y sin contenido (p. ej. «Nuevo 1» inicial)."""
+        if tab_index < 0 or tab_index >= self.count():
+            return False
+        tab_data = self.tab_data.get(tab_index)
+        if not tab_data or tab_data.file_path or tab_data.is_modified:
+            return False
+        editor = get_editor_widget(self.widget(tab_index))
+        if editor is None:
+            return False
+        return not editor.toPlainText().strip()
+
+    def _find_reusable_empty_tab(self) -> int:
+        for i in range(self.count()):
+            if self._is_reusable_empty_tab(i):
+                return i
+        return -1
+
+    def _assign_file_to_tab(self, tab_index: int, file_path: str, content: str) -> int:
+        """Reutiliza una pestaña vacía para mostrar un archivo."""
+        editor = get_editor_widget(self.widget(tab_index))
+        if editor is None:
+            return tab_index
+
+        editor.blockSignals(True)
+        editor.setPlainText(content)
+        editor.blockSignals(False)
+
+        tab_data = self.tab_data[tab_index]
+        tab_data.file_path = file_path
+        tab_data.content = content
+        tab_data.original_content = content
+        tab_data.is_modified = False
+
+        self.setTabText(tab_index, os.path.basename(file_path))
+        self.setTabToolTip(tab_index, file_path)
+        self._configure_editor_for_path(editor, file_path)
+        self._convert_tab_to_markdown_if_needed(tab_index)
+        tab_index = self.currentIndex()
+        self.update_tab_title(tab_index)
+        self.setCurrentIndex(tab_index)
+        return tab_index
     
     def close_tab(self, index):
         """Cierra una pestaña con confirmación si hay cambios sin guardar"""
@@ -4400,11 +4445,15 @@ class TabbedCodeEditor(QTabWidget):
                 self.setCurrentIndex(index)
                 return index
         
-        # Cargar archivo en nueva pestaña
+        # Cargar archivo reutilizando pestaña vacía o abriendo una nueva
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 content = file.read()
-            
+
+            reusable = self._find_reusable_empty_tab()
+            if reusable >= 0:
+                return self._assign_file_to_tab(reusable, file_path, content)
+
             tab_index, editor = self.new_tab(file_path, content)
             
             # Marcar como contenido original para detectar cambios
@@ -5348,7 +5397,14 @@ class CodeEditorViewPySide:
         header_title = QLabel("Ejecútalo!")
         header_title.setStyleSheet("font-weight: 600;")
         header_layout.addWidget(header_title)
-        header_layout.addStretch()
+        self._header_workspace_path = QLabel("")
+        self._header_workspace_path.setObjectName("HeaderWorkspacePath")
+        self._header_workspace_path.setStyleSheet("color: #858585; font-weight: normal;")
+        self._header_workspace_path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._header_workspace_path.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._header_workspace_path.setMinimumWidth(0)
+        self._header_workspace_full_path = ""
+        header_layout.addWidget(self._header_workspace_path, 1)
         # Botón Modo Café (bloquea pantalla) - derecha
         self.coffee_btn = QToolButton()
         self.coffee_btn.setObjectName("ActivityButton")
@@ -5436,6 +5492,8 @@ class CodeEditorViewPySide:
         explorer_layout.setContentsMargins(0, 0, 0, 0)
         explorer_layout.setSpacing(0)
         self.file_explorer = FileExplorerWidget(self)
+        self._update_header_workspace_path(self.file_explorer.current_root_path)
+        QTimer.singleShot(0, self._refresh_header_workspace_elide)
         if hasattr(self.file_explorer, 'toolbar_widget'):
             explorer_layout.addWidget(self.file_explorer.toolbar_widget)
         explorer_layout.addWidget(self.file_explorer, 1)
@@ -5458,8 +5516,10 @@ class CodeEditorViewPySide:
         main_horizontal_splitter.addWidget(right_widget)
         
         # Splitter vertical para dividir entrada y salida
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        right_layout.addWidget(splitter)
+        self.main_vertical_splitter = QSplitter(Qt.Orientation.Vertical)
+        right_layout.addWidget(self.main_vertical_splitter)
+        splitter = self.main_vertical_splitter
+        self._bottom_panel_sizes = [400, 200]
         
         # Frame para el área de entrada
         input_frame = QFrame()
@@ -5502,15 +5562,29 @@ class CodeEditorViewPySide:
         
         input_layout.addWidget(button_frame)
         
-        # Frame para el área de salida
-        output_frame = QFrame()
-        output_frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        # Frame para el área de salida (panel inferior)
+        self.bottom_panel_frame = QFrame()
+        self.bottom_panel_frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        output_frame = self.bottom_panel_frame
         output_layout = QVBoxLayout(output_frame)
-        
-        # Label para área de características y terminal
+        output_layout.setContentsMargins(6, 6, 6, 6)
+        output_layout.setSpacing(4)
+
+        panel_header = QWidget()
+        panel_header_layout = QHBoxLayout(panel_header)
+        panel_header_layout.setContentsMargins(0, 0, 0, 0)
+        panel_header_layout.setSpacing(4)
         output_label = QLabel("Panel")
         output_label.setStyleSheet("font-weight: 600;")
-        output_layout.addWidget(output_label)
+        panel_header_layout.addWidget(output_label)
+        panel_header_layout.addStretch()
+        close_panel_btn = QToolButton()
+        close_panel_btn.setText("✕")
+        close_panel_btn.setToolTip("Cerrar panel")
+        close_panel_btn.setFixedSize(22, 22)
+        close_panel_btn.clicked.connect(self._hide_bottom_panel)
+        panel_header_layout.addWidget(close_panel_btn)
+        output_layout.addWidget(panel_header)
         
         # Widget con pestañas para salida y terminal
         self.output_tabs = QTabWidget()
@@ -5534,7 +5608,7 @@ class CodeEditorViewPySide:
 • Ctrl+Enter → Ejecutar código en Terminal (solo .py)
 • Ctrl+Shift+V → Vista previa Markdown (solo .md)
 • Ctrl+W → Cerrar pestaña (avisa si hay cambios sin guardar)
-• Ctrl+` → Alternar a la pestaña Terminal
+• Ctrl+` → Mostrar u ocultar panel inferior (Terminal, Problems…)
 • Ctrl+Alt+C → Modo Café (pausa: bloquea hasta mover ratón o pulsar tecla)
 
 📝 PESTAÑAS Y MARKDOWN
@@ -5707,12 +5781,44 @@ class CodeEditorViewPySide:
                 try:
                     if hasattr(self, "coffee_overlay") and self.coffee_overlay:
                         self.coffee_overlay.setGeometry(self._central_widget.rect())
+                    self._refresh_header_workspace_elide()
                 except Exception:
                     pass
                 return old_resize(ev)
             self.window.resizeEvent = _resize
         except Exception as e:
             print("Coffee overlay build error:", e)
+
+    def _update_header_workspace_path(self, path=None):
+        """Muestra la carpeta de trabajo actual junto al título del editor."""
+        if not hasattr(self, "_header_workspace_path"):
+            return
+        if path is None:
+            fe = getattr(self, "file_explorer", None)
+            path = getattr(fe, "current_root_path", "") if fe else ""
+        if not path:
+            self._header_workspace_full_path = ""
+            self._header_workspace_path.setText("")
+            self._header_workspace_path.setToolTip("")
+            return
+        self._header_workspace_full_path = os.path.abspath(os.path.expanduser(str(path)))
+        self._header_workspace_path.setToolTip(self._header_workspace_full_path)
+        self._refresh_header_workspace_elide()
+
+    def _refresh_header_workspace_elide(self):
+        if not hasattr(self, "_header_workspace_path"):
+            return
+        full = getattr(self, "_header_workspace_full_path", "")
+        if not full:
+            self._header_workspace_path.setText("")
+            return
+        width = self._header_workspace_path.width()
+        if width < 80:
+            width = 480
+        elided = self._header_workspace_path.fontMetrics().elidedText(
+            full, Qt.TextElideMode.ElideMiddle, width - 8
+        )
+        self._header_workspace_path.setText(f"— {elided}")
 
     def toggle_coffee_mode(self):
         if self._coffee_active:
@@ -6152,24 +6258,34 @@ class CodeEditorViewPySide:
         
         # Menú Archivo
         file_menu = menubar.addMenu("📁 Archivo")
-        
-        # Acción Abrir
-        open_action = QAction("🔗 Abrir...", self.window)
-        open_action.setShortcut("Ctrl+O")
-        open_action.setStatusTip("Abrir archivo Python")
-        file_menu.addAction(open_action)
+
+        # Nuevo archivo / pestaña vacía
+        new_action = QAction("📄 Nuevo", self.window)
+        new_action.setShortcut("Ctrl+N")
+        new_action.setStatusTip("Crear una nueva pestaña vacía")
+        new_action.triggered.connect(self.new_tab)
+        file_menu.addAction(new_action)
         
         # Separador
         file_menu.addSeparator()
         
-        # Acción Nueva Pestaña
-        new_tab_action = QAction("📄 Nueva Pestaña", self.window)
-        new_tab_action.setShortcut("Ctrl+T")
-        new_tab_action.setStatusTip("Crear nueva pestaña")
-        new_tab_action.triggered.connect(self.new_tab)
-        file_menu.addAction(new_tab_action)
+        # Abrir archivo
+        open_action = QAction("📄 Abrir archivo...", self.window)
+        open_action.setShortcut("Ctrl+O")
+        open_action.setStatusTip("Abrir un archivo en el editor")
+        file_menu.addAction(open_action)
+
+        # Abrir carpeta de trabajo
+        open_folder_action = QAction("📂 Abrir carpeta...", self.window)
+        open_folder_action.setShortcut("Ctrl+Shift+O")
+        open_folder_action.setStatusTip("Seleccionar carpeta de trabajo del explorador")
+        open_folder_action.triggered.connect(self.open_folder_dialog)
+        file_menu.addAction(open_folder_action)
         
-        # Acción Cerrar Pestaña
+        # Separador
+        file_menu.addSeparator()
+        
+        # Cerrar pestaña
         close_tab_action = QAction("❌ Cerrar Pestaña", self.window)
         close_tab_action.setShortcut("Ctrl+W")
         close_tab_action.setStatusTip("Cerrar pestaña actual")
@@ -6275,6 +6391,17 @@ class CodeEditorViewPySide:
         # Menú Vista
         view_menu = menubar.addMenu("👁️ Vista")
         
+        # Panel inferior (Terminal, Problems, …)
+        toggle_panel_action = QAction("📟 Panel inferior", self.window)
+        toggle_panel_action.setShortcut("Ctrl+`")
+        toggle_panel_action.setStatusTip("Mostrar u ocultar el panel inferior")
+        toggle_panel_action.setCheckable(True)
+        toggle_panel_action.setChecked(True)
+        toggle_panel_action.triggered.connect(self._on_toggle_panel_action)
+        view_menu.addAction(toggle_panel_action)
+
+        view_menu.addSeparator()
+        
         # Acción Toggle Explorador de Archivos
         toggle_explorer_action = QAction("📁 Explorador de Archivos", self.window)
         toggle_explorer_action.setShortcut("F3")
@@ -6358,7 +6485,10 @@ class CodeEditorViewPySide:
         help_menu.addAction(about_action)
         
         # Guardar referencias a las acciones para conectarlas después
+        self.new_action = new_action
         self.open_action = open_action
+        self.open_folder_action = open_folder_action
+        self.toggle_panel_action = toggle_panel_action
         self.save_action = save_action
         self.save_as_action = save_as_action
         self.exit_action = exit_action
@@ -6606,15 +6736,36 @@ class CodeEditorViewPySide:
         self.about_action.triggered.connect(about_callback)
     
     def open_file_dialog(self):
-        """Abre un diálogo para seleccionar archivo Python"""
-        file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(
+        """Abre un diálogo para seleccionar un archivo."""
+        start_dir = ""
+        if hasattr(self, "file_explorer"):
+            start_dir = getattr(self.file_explorer, "current_root_path", "") or ""
+        file_path, _ = QFileDialog.getOpenFileName(
             self.window,
-            "Abrir archivo Python",
-            "",
-            "Archivos Python (*.py);;Todos los archivos (*)"
+            "Abrir archivo",
+            start_dir,
+            "Archivos Python (*.py);;Markdown (*.md);;Texto (*.txt);;Todos los archivos (*)",
         )
         return file_path
+
+    def open_folder_dialog(self):
+        """Abre un diálogo para seleccionar la carpeta de trabajo del explorador."""
+        start_dir = ""
+        if hasattr(self, "file_explorer"):
+            start_dir = getattr(self.file_explorer, "current_root_path", "") or ""
+        directory = QFileDialog.getExistingDirectory(
+            self.window,
+            "Abrir carpeta",
+            start_dir,
+        )
+        if not directory:
+            return ""
+        if hasattr(self, "file_explorer"):
+            self.file_explorer.load_directory(directory)
+            self._set_sidebar_tab(0)
+            if hasattr(self, "explorer_container"):
+                self.explorer_container.show()
+        return directory
     
     def save_file_dialog(self):
         """Abre un diálogo para guardar archivo Python"""
@@ -6647,9 +6798,6 @@ class CodeEditorViewPySide:
                 # Actualizar título de ventana
                 filename = os.path.basename(file_path)
                 self.window.setWindowTitle(f"{AppConfig.WINDOW_TITLE} - {filename}")
-                
-                # Mostrar mensaje de confirmación
-                self.show_message("Archivo Cargado", f"Archivo '{filename}' cargado correctamente.", "info")
                 return True
             
             return False
@@ -7043,13 +7191,8 @@ class CodeEditorViewPySide:
                 self.show_message("Información", "📝 No hay código para ejecutar", "info")
                 return
             
-            # Cambiar a la pestaña del terminal
-            if hasattr(self, 'output_tabs'):
-                # Buscar la pestaña del terminal
-                for i in range(self.output_tabs.count()):
-                    if "Terminal" in self.output_tabs.tabText(i):
-                        self.output_tabs.setCurrentIndex(i)
-                        break
+            # Mostrar panel y cambiar a la pestaña del terminal
+            self._show_bottom_panel(focus_terminal=True)
             
             # Ejecutar código en el terminal integrado en modo salida limpia
             if hasattr(self, 'integrated_terminal'):
@@ -7088,6 +7231,12 @@ class CodeEditorViewPySide:
         """Configura los atajos de teclado"""
         from PySide6.QtGui import QShortcut, QKeySequence
         
+        # Ctrl+N y Ctrl+T para nueva pestaña vacía
+        new_shortcut = QShortcut(QKeySequence("Ctrl+N"), self.window)
+        new_shortcut.activated.connect(self.new_tab)
+        new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self.window)
+        new_tab_shortcut.activated.connect(self.new_tab)
+
         # Ctrl+Enter para ejecutar en terminal (comportamiento unificado)
         self._execute_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.window)
         self._execute_shortcut.activated.connect(self.execute_code_in_terminal)
@@ -7100,11 +7249,11 @@ class CodeEditorViewPySide:
         format_shortcut = QShortcut(QKeySequence("Ctrl+Alt+F"), self.window)
         format_shortcut.activated.connect(self.format_current_code)
         
-        # Ctrl+` para alternar terminal
-        terminal_shortcut = QShortcut(QKeySequence("Ctrl+`"), self.window)
-        terminal_shortcut.activated.connect(self.toggle_terminal)
+        # Ctrl+` para mostrar/ocultar panel inferior (atajo también en menú Vista)
+        panel_shortcut = QShortcut(QKeySequence("Ctrl+`"), self.window)
+        panel_shortcut.activated.connect(self.toggle_bottom_panel)
 
-        # Command Palette (estilo Cursor/VS Code)
+        # Ctrl+Enter para ejecutar en terminal (comportamiento unificado)
         palette_shortcut = QShortcut(QKeySequence("Ctrl+Shift+P"), self.window)
         palette_shortcut.activated.connect(self.show_command_palette)
         quick_open_shortcut = QShortcut(QKeySequence("Ctrl+P"), self.window)
@@ -7129,20 +7278,67 @@ class CodeEditorViewPySide:
         find_prev_shortcut = QShortcut(QKeySequence("Shift+F3"), self.window)
         find_prev_shortcut.activated.connect(self._find_prev_global)
     
+    def _focus_terminal_tab(self):
+        """Activa la pestaña Terminal dentro del panel inferior."""
+        if not hasattr(self, "output_tabs"):
+            return
+        for i in range(self.output_tabs.count()):
+            if "Terminal" in self.output_tabs.tabText(i):
+                self.output_tabs.setCurrentIndex(i)
+                break
+        if hasattr(self, "integrated_terminal"):
+            self.integrated_terminal.command_input.setFocus()
+
+    def _hide_bottom_panel(self):
+        """Oculta el panel inferior; el editor ocupa todo el alto."""
+        if not hasattr(self, "bottom_panel_frame") or not self.bottom_panel_frame.isVisible():
+            return
+        sizes = self.main_vertical_splitter.sizes()
+        if len(sizes) >= 2 and sizes[1] > 0:
+            self._bottom_panel_sizes = sizes
+        self.bottom_panel_frame.hide()
+        total = max(sum(sizes), 1)
+        self.main_vertical_splitter.setSizes([total, 0])
+        if hasattr(self, "toggle_panel_action"):
+            self.toggle_panel_action.blockSignals(True)
+            self.toggle_panel_action.setChecked(False)
+            self.toggle_panel_action.blockSignals(False)
+
+    def _show_bottom_panel(self, focus_terminal: bool = False):
+        """Muestra el panel inferior y restaura su altura."""
+        if not hasattr(self, "bottom_panel_frame"):
+            return
+        if not self.bottom_panel_frame.isVisible():
+            self.bottom_panel_frame.show()
+            bottom = 200
+            if getattr(self, "_bottom_panel_sizes", None) and len(self._bottom_panel_sizes) >= 2:
+                bottom = max(120, self._bottom_panel_sizes[1])
+            total = max(sum(self.main_vertical_splitter.sizes()), bottom + 200)
+            self.main_vertical_splitter.setSizes([total - bottom, bottom])
+        if hasattr(self, "toggle_panel_action"):
+            self.toggle_panel_action.blockSignals(True)
+            self.toggle_panel_action.setChecked(True)
+            self.toggle_panel_action.blockSignals(False)
+        if focus_terminal:
+            self._focus_terminal_tab()
+
+    def _on_toggle_panel_action(self, checked: bool):
+        """Menú Vista → Panel inferior."""
+        if checked:
+            self._show_bottom_panel()
+        else:
+            self._hide_bottom_panel()
+
+    def toggle_bottom_panel(self):
+        """Alterna la visibilidad del panel inferior."""
+        if hasattr(self, "bottom_panel_frame") and self.bottom_panel_frame.isVisible():
+            self._hide_bottom_panel()
+        else:
+            self._show_bottom_panel(focus_terminal=True)
+
     def toggle_terminal(self):
-        """Alterna entre la pestaña de salida y terminal"""
-        try:
-            if hasattr(self, 'output_tabs'):
-                current_index = self.output_tabs.currentIndex()
-                # Alternar entre pestaña 0 (Salida) y pestaña 1 (Terminal)
-                new_index = 1 if current_index == 0 else 0
-                self.output_tabs.setCurrentIndex(new_index)
-                
-                # Enfocar el terminal si se cambia a él
-                if new_index == 1 and hasattr(self, 'integrated_terminal'):
-                    self.integrated_terminal.command_input.setFocus()
-        except Exception as e:
-            print(f"Error alternando terminal: {e}")
+        """Activity bar / atajo: alterna panel inferior y enfoca Terminal al abrir."""
+        self.toggle_bottom_panel()
 
     def show_command_palette(self):
         """Muestra una paleta de comandos (comandos + archivos recientes)."""
@@ -7152,15 +7348,17 @@ class CodeEditorViewPySide:
             items = []
             # Comandos principales
             items.extend([
+                {"kind": "command", "label": "Nuevo", "detail": "Ctrl+N", "callback": lambda: self.new_tab()},
                 {"kind": "command", "label": "Abrir archivo…", "detail": "Ctrl+O", "callback": lambda: self.load_file_content(self.open_file_dialog())},
+                {"kind": "command", "label": "Abrir carpeta…", "detail": "Ctrl+Shift+O", "callback": lambda: self.open_folder_dialog()},
                 {"kind": "command", "label": "Guardar", "detail": "Ctrl+S", "callback": lambda: self.save_file_content()},
                 {"kind": "command", "label": "Guardar como…", "detail": "Ctrl+Shift+S", "callback": lambda: self.tabbed_editor.save_current_tab() if hasattr(self, "tabbed_editor") else None},
                 {"kind": "command", "label": "Buscar…", "detail": "Ctrl+F", "callback": lambda: self.show_find_dialog()},
                 {"kind": "command", "label": "Buscar y reemplazar…", "detail": "Ctrl+H", "callback": lambda: self.show_find_replace_dialog()},
                 {"kind": "command", "label": "Buscar en archivos…", "detail": "Ctrl+Shift+F", "callback": lambda: self.show_multi_file_search_dialog()},
                 {"kind": "command", "label": "Preferencias…", "detail": "Ctrl+,", "callback": lambda: self.show_preferences_dialog()},
+                {"kind": "command", "label": "Toggle panel inferior", "detail": "Ctrl+`", "callback": lambda: self.toggle_bottom_panel()},
                 {"kind": "command", "label": "Toggle explorador", "detail": "F3", "callback": lambda: self.toggle_file_explorer()},
-                {"kind": "command", "label": "Toggle terminal", "detail": "Ctrl+`", "callback": lambda: self.toggle_terminal()},
             ])
 
             # Archivos recientes (Quick Open)
@@ -7381,7 +7579,6 @@ class CodeEditorViewPySide:
             # Crear nueva pestaña
             if hasattr(self, 'tab_widget'):
                 self.tab_widget.new_tab(file_path, content)
-                self.show_message("Archivo", f"📂 Archivo abierto: {os.path.basename(file_path)}", "info")
             
         except Exception as e:
             self.show_message("Error", f"❌ Error abriendo archivo: {e}", "error")

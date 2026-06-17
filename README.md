@@ -23,10 +23,12 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 
 ### Interfaz y edición
 - Activity Bar, sidebar (**Explorer / Search**) y panel inferior (**Terminal / Problems**)
+- Barra superior con **carpeta de trabajo** visible junto al título
 - Command Palette (`Ctrl+Shift+P`) y Quick Open (`Ctrl+P`)
-- Pestañas múltiples con aviso al cerrar si hay **cambios sin guardar**
+- Menú **Archivo**: Nuevo, Abrir archivo, Abrir carpeta, Guardar, etc.
+- Pestañas múltiples con aviso al cerrar si hay **cambios sin guardar**; la pestaña vacía inicial se reutiliza al abrir el primer archivo
 - **Vista previa Markdown** opcional (`Ctrl+Shift+V`) en archivos `.md`
-- Explorador con **iconos por tipo de archivo**, resaltado de sintaxis y verificación en tiempo real
+- Explorador con **iconos por tipo de archivo**, resaltado de sintaxis (cadenas, comentarios, etc.) y verificación en tiempo real
 - Varios temas (incluido **Café**) y **Modo Café** con Pomodoro opcional (descansos automáticos)
 
 ### Desarrollo
@@ -41,6 +43,9 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 
 | Atajo | Acción |
 |-------|--------|
+| `Ctrl+N` | Nuevo (pestaña vacía) |
+| `Ctrl+O` | Abrir archivo |
+| `Ctrl+Shift+O` | Abrir carpeta de trabajo |
 | `Ctrl+P` | Quick Open (archivos recientes) |
 | `Ctrl+Shift+P` | Command Palette |
 | `Ctrl+Enter` | Ejecutar código en Terminal |
@@ -60,6 +65,7 @@ Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).
 | Índice general | [`Docs/README.md`](./Docs/README.md) |
 | Instalación y dependencias | [`Docs/install.md`](./Docs/install.md) |
 | Interfaz estilo Cursor | [`Docs/ui-cursor.md`](./Docs/ui-cursor.md) |
+| Archivos, pestañas y explorador | [`Docs/files-and-tabs.md`](./Docs/files-and-tabs.md) |
 | Markdown y archivos `.txt` | [`Docs/markdown.md`](./Docs/markdown.md) |
 | Búsqueda y reemplazo | [`Docs/search.md`](./Docs/search.md) |
 | Terminal integrado | [`Docs/terminal.md`](./Docs/terminal.md) |

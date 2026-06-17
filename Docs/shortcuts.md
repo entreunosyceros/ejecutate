@@ -3,21 +3,46 @@
 - [← Índice](./README.md)
 - [Portada](../README.md)
 
+## Menú Archivo
+
+| Opción | Atajo |
+|--------|-------|
+| Nuevo | `Ctrl+N` |
+| Abrir archivo… | `Ctrl+O` |
+| Abrir carpeta… | `Ctrl+Shift+O` |
+| Cerrar Pestaña | `Ctrl+W` |
+| Guardar | `Ctrl+S` |
+| Guardar Como… | `Ctrl+Shift+S` |
+| Salir | `Ctrl+Q` |
+
+Más detalle: [Archivos, pestañas y explorador](./files-and-tabs.md).
+
 ## Atajos principales
+
+### Archivo
+- `Ctrl+N`: **Nuevo** (pestaña vacía)
+- `Ctrl+T`: Nueva pestaña vacía (atajo alternativo)
+- `Ctrl+O`: **Abrir archivo…** (`.py`, `.md`, `.txt`, …)
+- `Ctrl+Shift+O`: **Abrir carpeta…** (carpeta de trabajo del explorador)
+- `Ctrl+W`: Cerrar pestaña actual (pregunta si hay cambios sin guardar)
+- `Ctrl+S`: Guardar
+- `Ctrl+Shift+S`: Guardar como…
+- `Ctrl+Q`: Salir
+
+### Panel inferior
+- `Ctrl+` `: Mostrar u ocultar panel inferior (Terminal, Problems…)
+- **Vista → Panel inferior**: misma acción (con casilla de verificación)
+- **✕** en la cabecera del panel: cerrar
 
 ### Navegación / productividad
 - `Ctrl+P`: **Quick Open** (archivos recientes)
 - `Ctrl+Shift+P`: **Command Palette**
-- `Ctrl+T`: Nueva pestaña
-- `Ctrl+W`: Cerrar pestaña actual (pregunta si hay cambios sin guardar)
-- `Ctrl+S`: Guardar
-- `Ctrl+Shift+S`: Guardar como…
+- `Ctrl+,`: Preferencias
 - `F2`: Documentación
 - `F3`: Mostrar/ocultar explorador
 
 ### Ejecución
-- `Ctrl+Enter`: Ejecutar código en el **Terminal** (solo archivos Python; deshabilitado en `.txt` / `.md`)
-- `Ctrl+\``: Alternar pestaña **Terminal**
+- `Ctrl+Enter`: Ejecutar código en el **Terminal** (abre el panel si estaba cerrado; solo `.py`)
 - `Ctrl+L`: Limpiar salida (según panel activo)
 
 ### Markdown

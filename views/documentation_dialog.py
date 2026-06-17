@@ -180,10 +180,19 @@ class DocumentationDialog(QDialog):
         
         <h3 style="color: #E74C3C;">🔖 Sistema de Pestañas</h3>
         <ul>
-            <li><strong>Nueva Pestaña:</strong> <code>Ctrl+T</code> o Menú → Archivo → Nueva Pestaña</li>
+            <li><strong>Nuevo:</strong> <code>Ctrl+N</code> o Menú → Archivo → Nuevo (también <code>Ctrl+T</code>)</li>
+            <li><strong>Abrir archivo:</strong> <code>Ctrl+O</code>, explorador (doble clic) o Menú → Archivo → Abrir archivo…</li>
+            <li><strong>Abrir carpeta:</strong> <code>Ctrl+Shift+O</code> o Menú → Archivo → Abrir carpeta…</li>
+            <li><strong>Pestaña inicial:</strong> si «Nuevo 1» está vacía, al abrir un archivo se reutiliza esa pestaña</li>
             <li><strong>Cerrar Pestaña:</strong> <code>Ctrl+W</code> o click en la "❌" de la pestaña (si hay cambios sin guardar, pregunta Guardar / No / Cancelar)</li>
             <li><strong>Indicador de cambios:</strong> un prefijo <code>•</code> en el título de la pestaña significa que no está guardada</li>
             <li><strong>Cambiar entre Pestañas:</strong> Click en las pestañas o <code>Ctrl+Tab</code></li>
+        </ul>
+        
+        <h3 style="color: #E74C3C;">📁 Carpeta de trabajo</h3>
+        <ul>
+            <li>La ruta de la carpeta del explorador aparece en la barra superior, junto a «Ejecútalo!»</li>
+            <li>Al abrir archivos desde el explorador no se muestran ventanas de confirmación</li>
         </ul>
         
         <h3 style="color: #E74C3C;">📄 Markdown y texto</h3>
@@ -195,7 +204,9 @@ class DocumentationDialog(QDialog):
         
         <h3 style="color: #E74C3C;">💾 Guardar y Abrir Archivos</h3>
         <ul>
-            <li><strong>Abrir Archivo:</strong> <code>Ctrl+O</code> o Menú → Archivo → Abrir</li>
+            <li><strong>Nuevo:</strong> <code>Ctrl+N</code> — pestaña vacía</li>
+            <li><strong>Abrir Archivo:</strong> <code>Ctrl+O</code> o Menú → Archivo → Abrir archivo…</li>
+            <li><strong>Abrir Carpeta:</strong> <code>Ctrl+Shift+O</code> o Menú → Archivo → Abrir carpeta…</li>
             <li><strong>Guardar:</strong> <code>Ctrl+S</code> o Menú → Archivo → Guardar</li>
             <li><strong>Guardar Como:</strong> <code>Ctrl+Shift+S</code> o Menú → Archivo → Guardar Como</li>
         </ul>
