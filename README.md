@@ -30,6 +30,8 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 
 ## Qué incluye
 
+<img width="1917" height="1043" alt="ejecutate-editor" src="https://github.com/user-attachments/assets/8c7a4658-e2b5-4f32-a1cf-5fa36b74fc85" />
+
 ### Interfaz y edición
 - Activity Bar, sidebar (**Explorer / Search**) y panel inferior (**Terminal / Problems**)
 - Barra superior con **carpeta de trabajo** visible junto al título
@@ -74,6 +76,8 @@ Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).
 
 ## Documentación completa
 
+<img width="1136" height="814" alt="documentacion-ejecutate" src="https://github.com/user-attachments/assets/765df6d8-d67c-4752-ad25-dbe300238ff1" />
+
 | Tema | Enlace |
 |------|--------|
 | Índice general | [`Docs/README.md`](./Docs/README.md) |
@@ -89,6 +93,8 @@ Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).
 | Añadir tutoriales | [`Docs/adding-tutorials.md`](./Docs/adding-tutorials.md) |
 
 ## Dependencias principales
+
+<img width="1918" height="1047" alt="preferencias-ejecutate" src="https://github.com/user-attachments/assets/9699f893-2444-40f1-aa04-9425137e58a1" />
 
 PySide6 · Pygments · markdown · autopep8 · black · isort
 
