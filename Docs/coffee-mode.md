@@ -11,13 +11,17 @@
 ## Activación
 - Botón **☕** en la barra superior
 - Atajo: `Ctrl+Alt+C`
+- **Pomodoro automático**: al llegar a cero la cuenta atrás de trabajo (si está configurado)
 
 ## Personalización
-- Preferencias → **☕ Café**:
-  - **Mensaje**: texto mostrado en el overlay durante la pausa
-  - **Pomodoro automático**: descansos programados cada X minutos de trabajo
-  - **Intervalo de trabajo**: minutos hasta el próximo descanso automático (p. ej. 25)
-  - **Duración del descanso**: minutos del overlay con cuenta atrás (p. ej. 5)
+Abre **Preferencias** (`Ctrl+,` o Activity Bar → Settings) → pestaña **☕ Café**:
+
+| Opción | Descripción | Valor por defecto |
+|--------|-------------|-------------------|
+| Mensaje | Texto en el overlay durante la pausa | *Mueve el ratón o pulsa cualquier tecla para volver.* |
+| Pomodoro automático | Descansos programados cada X minutos | Desactivado |
+| Intervalo de trabajo | Minutos hasta el próximo descanso | 25 min |
+| Duración del descanso | Minutos con cuenta atrás en el overlay | 5 min |
 
 ## Pomodoro 🍅
 Con Pomodoro activo:
@@ -26,3 +30,9 @@ Con Pomodoro activo:
 3. En el overlay aparece **Descanso: MM:SS** descontando el tiempo de pausa.
 4. Puedes salir antes moviendo el ratón o pulsando una tecla; al terminar el tiempo, el overlay se cierra solo y reinicia el ciclo de trabajo.
 5. El botón ☕ y `Ctrl+Alt+C` siguen funcionando para pausas manuales (con el mismo temporizador de descanso si Pomodoro está activo).
+
+Sin Pomodoro, el Modo Café manual funciona igual que antes: overlay con tu mensaje personalizado, sin temporizadores.
+
+## Ver también
+- [Atajos de teclado](./shortcuts.md)
+- [Interfaz (status bar y botón ☕)](./ui-cursor.md)

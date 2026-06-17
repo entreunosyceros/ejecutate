@@ -8,7 +8,8 @@
 - **Sidebar**: pestañas **Explorer** y **Search**
 - **Editor**: pestañas de archivos (indicador `•` si hay cambios sin guardar)
 - **Panel inferior**: **Terminal**, **Problems** y ayuda
-- **Status bar**: Ln/Col y tema activo
+- **Status bar**: posición Ln/Col, tema activo y, si Pomodoro está activo, cuenta atrás `☕ MM:SS` hasta el próximo descanso
+- **Barra superior**: botón **☕** para Modo Café (pausa manual; ver [Modo Café](./coffee-mode.md))
 
 ## Panels
 - **Explorer**: árbol de archivos con **iconos por tipo** (Python, Markdown, JSON, imágenes, etc.) y raíz configurable

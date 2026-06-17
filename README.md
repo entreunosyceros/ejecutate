@@ -27,7 +27,7 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 - Pestañas múltiples con aviso al cerrar si hay **cambios sin guardar**
 - **Vista previa Markdown** opcional (`Ctrl+Shift+V`) en archivos `.md`
 - Explorador con **iconos por tipo de archivo**, resaltado de sintaxis y verificación en tiempo real
-- Varios temas (incluido **Café**)
+- Varios temas (incluido **Café**) y **Modo Café** con Pomodoro opcional (descansos automáticos)
 
 ### Desarrollo
 - Terminal integrado con modos **Limpio** e **Interactivo**
@@ -48,7 +48,7 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 | `Ctrl+F` / `Ctrl+H` | Buscar / Buscar y reemplazar |
 | `Ctrl+Shift+V` | Vista previa Markdown (solo `.md`) |
 | `Ctrl+W` | Cerrar pestaña (avisa si hay cambios) |
-| `Ctrl+Alt+C` | Modo Café (pausa) |
+| `Ctrl+Alt+C` | Modo Café (pausa manual o con Pomodoro) |
 | `F4`–`F7` | Tutoriales / Debugger / Paquetes / Análisis |
 
 Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).

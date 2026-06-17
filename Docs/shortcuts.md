@@ -37,8 +37,15 @@
 - `F6`: Gestor de paquetes
 - `F7`: Análisis de código
 
-### Modo Café
-- `Ctrl+Alt+C`: Activar/desactivar Modo Café (pausa)
+### Modo Café y Pomodoro
+- `Ctrl+Alt+C`: Activar/desactivar Modo Café (pausa manual)
+- Botón **☕** en la barra superior: mismo efecto que el atajo
+- Con **Pomodoro** activo (Preferencias → ☕ Café):
+  - Barra de estado: `☕ MM:SS` hasta el próximo descanso automático
+  - Overlay durante el descanso: `Descanso: MM:SS`
+  - Configurable: intervalo de trabajo y duración del descanso
+
+Detalle en [Modo Café](./coffee-mode.md).
 
 ### Terminal del sistema
 - `Ctrl+Alt+T`: Abrir terminal nativa del SO (menú Vista)
