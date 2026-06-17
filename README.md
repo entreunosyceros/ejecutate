@@ -7,7 +7,7 @@ Editor de código Python con arquitectura **MVC** e interfaz **PySide6**. Incluy
 ## Inicio rápido
 
 ```bash
-git clone https://github.com/sapoclay/ejecutate.git
+git clone https://github.com/entreunosyceros/ejecutate.git
 cd ejecutate
 python3 run_app.py
 ```

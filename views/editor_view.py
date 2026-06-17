@@ -1063,7 +1063,7 @@ y trabajar en proyectos pequeños y medianos.
     def _open_github(self):
         """Abre el enlace de GitHub en el navegador predeterminado"""
         try:
-            url = QUrl("https://github.com/sapoclay/ejecutate")
+            url = QUrl("https://github.com/entreunosyceros/ejecutate")
             QDesktopServices.openUrl(url)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"No se pudo abrir el enlace:\n{str(e)}")
