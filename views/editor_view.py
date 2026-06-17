@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
 from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QSettings, QPoint, QThread, Signal, QProcess
 from PySide6.QtCore import QSize
 from PySide6.QtCore import QObject
-from PySide6.QtGui import QFont, QTextCharFormat, QColor, QSyntaxHighlighter, QTextDocument, QAction, QPixmap, QDesktopServices, QPainter, QFontDatabase, QIcon, QKeyEvent, QTextCursor
+from PySide6.QtGui import QFont, QTextCharFormat, QColor, QSyntaxHighlighter, QTextDocument, QAction, QPixmap, QDesktopServices, QPainter, QFontDatabase, QIcon, QKeyEvent, QTextCursor, QPalette
 from pygments import highlight
 from pygments.lexers import PythonLexer
 from pygments.formatters import NullFormatter
@@ -47,6 +47,42 @@ def _load_stylesheet(path: str) -> str:
             return f.read()
     except Exception:
         return ""
+
+
+def _syntax_theme_from_settings(settings: dict | None) -> dict:
+    """Colores de sintaxis en formato plano (preferencias o tema AppConfig)."""
+    if not settings:
+        return AppConfig.THEMES[AppConfig.DEFAULT_THEME].copy()
+    if settings.get("syntax_string_color") or settings.get("syntax_comment_color"):
+        return settings
+    nested = settings.get("syntax_colors")
+    if isinstance(nested, dict) and nested:
+        return {**settings, **nested}
+    return settings
+
+
+def _editor_surface_stylesheet(settings: dict) -> str:
+    """Estilos del editor sin `color` (el QSS anula QTextCharFormat del highlighter)."""
+    bg = settings.get("editor_bg_color", "#2C3E50")
+    sel = settings.get("editor_selection_color", "#3498DB")
+    return f"""
+        QPlainTextEdit {{
+            background-color: {bg};
+            border: 1px solid #34495E;
+            border-radius: 3px;
+            padding: 6px;
+            selection-background-color: {sel};
+        }}
+    """
+
+
+def _apply_editor_text_palette(editor, settings: dict) -> None:
+    """Color base del texto vía paleta (compatible con resaltado de sintaxis)."""
+    color = QColor(settings.get("editor_text_color", "#ECF0F1"))
+    palette = editor.palette()
+    palette.setColor(QPalette.ColorRole.Text, color)
+    palette.setColor(QPalette.ColorRole.WindowText, color)
+    editor.setPalette(palette)
 
 
 def _maybe_load_svg_icon(svg_path: str) -> QIcon:
@@ -2545,23 +2581,38 @@ def calcular(precio,descuento):
 class PythonSyntaxHighlighter(QSyntaxHighlighter):
     """Resaltador de sintaxis para Python usando Pygments"""
     
+    _STATE_NORMAL = 0
+    _STATE_TRIPLE_SINGLE = 1
+    _STATE_TRIPLE_DOUBLE = 2
+    
     def __init__(self, document, theme_settings=None):
         super().__init__(document)
         self.lexer = PythonLexer()
         self.formatter = NullFormatter()
-        self.theme_settings = theme_settings or self._get_default_theme()
+        self.theme_settings = _syntax_theme_from_settings(theme_settings)
         self._setup_formats()
     
     def _get_default_theme(self):
         """Obtiene el tema por defecto"""
-        from config import AppConfig
-        return AppConfig.THEMES[AppConfig.DEFAULT_THEME]
+        return AppConfig.THEMES[AppConfig.DEFAULT_THEME].copy()
     
     def update_theme(self, theme_settings):
         """Actualiza el tema del resaltador"""
-        self.theme_settings = theme_settings
+        self.theme_settings = _syntax_theme_from_settings(theme_settings)
         self._setup_formats()
         self.rehighlight()
+    
+    def _theme_color(self, key: str, default: str) -> str:
+        return self.theme_settings.get(key, default)
+    
+    def _format_for_token(self, token_type):
+        """Busca formato por tipo de token o por ancestro en la jerarquía Pygments."""
+        while token_type not in (Token, Token.Error):
+            fmt = self.formats.get(token_type)
+            if fmt is not None:
+                return fmt
+            token_type = token_type.parent
+        return None
     
     def _setup_formats(self):
         """Configura los formatos de colores para diferentes tipos de tokens"""
@@ -2569,76 +2620,134 @@ class PythonSyntaxHighlighter(QSyntaxHighlighter):
         
         # Palabras clave (def, class, if, etc.)
         keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor(self.theme_settings.get('syntax_keyword_color', '#FF6B35')))
+        keyword_format.setForeground(QColor(self._theme_color('syntax_keyword_color', '#FF6B35')))
         keyword_format.setFontWeight(QFont.Weight.Bold)
         self.formats[Token.Keyword] = keyword_format
-        self.formats[Token.Keyword.Constant] = keyword_format
-        self.formats[Token.Keyword.Declaration] = keyword_format
-        self.formats[Token.Keyword.Namespace] = keyword_format
-        self.formats[Token.Keyword.Reserved] = keyword_format
         
-        # Strings
+        # Strings (incluye subtipos vía _format_for_token)
         string_format = QTextCharFormat()
-        string_format.setForeground(QColor(self.theme_settings.get('syntax_string_color', '#2ECC71')))
+        string_format.setForeground(QColor(self._theme_color('syntax_string_color', '#2ECC71')))
         self.formats[Token.Literal.String] = string_format
-        self.formats[Token.Literal.String.Double] = string_format
-        self.formats[Token.Literal.String.Single] = string_format
-        self.formats[Token.Literal.String.Doc] = string_format
         
         # Comentarios
         comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(self.theme_settings.get('syntax_comment_color', '#95A5A6')))
+        comment_format.setForeground(QColor(self._theme_color('syntax_comment_color', '#95A5A6')))
         comment_format.setFontItalic(True)
         self.formats[Token.Comment] = comment_format
-        self.formats[Token.Comment.Single] = comment_format
-        self.formats[Token.Comment.Multiline] = comment_format
         
         # Números
         number_format = QTextCharFormat()
-        number_format.setForeground(QColor(self.theme_settings.get('syntax_number_color', '#E74C3C')))
+        number_format.setForeground(QColor(self._theme_color('syntax_number_color', '#E74C3C')))
         self.formats[Token.Literal.Number] = number_format
-        self.formats[Token.Literal.Number.Integer] = number_format
-        self.formats[Token.Literal.Number.Float] = number_format
         
         # Operadores
         operator_format = QTextCharFormat()
-        operator_format.setForeground(QColor(self.theme_settings.get('syntax_operator_color', '#9B59B6')))
+        operator_format.setForeground(QColor(self._theme_color('syntax_operator_color', '#9B59B6')))
         operator_format.setFontWeight(QFont.Weight.Bold)
         self.formats[Token.Operator] = operator_format
         
         # Funciones built-in
         builtin_format = QTextCharFormat()
-        builtin_format.setForeground(QColor(self.theme_settings.get('syntax_builtin_color', '#3498DB')))
+        builtin_format.setForeground(QColor(self._theme_color('syntax_builtin_color', '#3498DB')))
         self.formats[Token.Name.Builtin] = builtin_format
         
         # Nombres de funciones
         function_format = QTextCharFormat()
-        function_format.setForeground(QColor(self.theme_settings.get('syntax_function_color', '#F39C12')))
+        function_format.setForeground(QColor(self._theme_color('syntax_function_color', '#F39C12')))
         self.formats[Token.Name.Function] = function_format
         
         # Nombres de clases
         class_format = QTextCharFormat()
-        class_format.setForeground(QColor(self.theme_settings.get('syntax_class_color', '#E67E22')))
+        class_format.setForeground(QColor(self._theme_color('syntax_class_color', '#E67E22')))
         class_format.setFontWeight(QFont.Weight.Bold)
         self.formats[Token.Name.Class] = class_format
+    
+    def _highlight_multiline_continuation(self, text: str) -> tuple[int, int]:
+        """Si la línea continúa un literal triple, resalta y devuelve (offset, nuevo_estado)."""
+        state = self.previousBlockState()
+        if state == self._STATE_TRIPLE_SINGLE:
+            delim = "'''"
+        elif state == self._STATE_TRIPLE_DOUBLE:
+            delim = '"""'
+        else:
+            return 0, self._STATE_NORMAL
+        
+        string_fmt = self._format_for_token(Token.Literal.String)
+        end = text.find(delim)
+        if end == -1:
+            if string_fmt:
+                self.setFormat(0, len(text), string_fmt)
+            return len(text), state
+        
+        end += len(delim)
+        if string_fmt:
+            self.setFormat(0, end, string_fmt)
+        return end, self._STATE_NORMAL
+    
+    def _detect_multiline_end_state(self, text: str, start: int = 0) -> int:
+        """Determina si la línea termina dentro de un literal triple sin cerrar."""
+        state = self._STATE_NORMAL
+        i = start
+        while i < len(text):
+            if state == self._STATE_NORMAL:
+                if text.startswith('"""', i):
+                    state = self._STATE_TRIPLE_DOUBLE
+                    i += 3
+                elif text.startswith("'''", i):
+                    state = self._STATE_TRIPLE_SINGLE
+                    i += 3
+                elif text[i] in "\"'":
+                    quote = text[i]
+                    i += 1
+                    while i < len(text):
+                        if text[i] == "\\" and i + 1 < len(text):
+                            i += 2
+                            continue
+                        if text[i] == quote:
+                            i += 1
+                            break
+                        i += 1
+                elif text[i] == "#":
+                    break
+                else:
+                    i += 1
+            elif state == self._STATE_TRIPLE_DOUBLE:
+                end = text.find('"""', i)
+                if end == -1:
+                    return self._STATE_TRIPLE_DOUBLE
+                state = self._STATE_NORMAL
+                i = end + 3
+            elif state == self._STATE_TRIPLE_SINGLE:
+                end = text.find("'''", i)
+                if end == -1:
+                    return self._STATE_TRIPLE_SINGLE
+                state = self._STATE_NORMAL
+                i = end + 3
+        return state
     
     def highlightBlock(self, text):
         """Resalta un bloque de texto"""
         try:
-            tokens = list(self.lexer.get_tokens(text))
-            index = 0
+            offset, state = self._highlight_multiline_continuation(text)
+            remainder = text[offset:]
+            if not remainder:
+                self.setCurrentBlockState(state)
+                return
+            
+            tokens = list(self.lexer.get_tokens(remainder))
+            index = offset
             
             for token_type, token_text in tokens:
                 length = len(token_text)
-                format_obj = self.formats.get(token_type)
-                
+                format_obj = self._format_for_token(token_type)
                 if format_obj:
                     self.setFormat(index, length, format_obj)
-                
                 index += length
-                
+            
+            self.setCurrentBlockState(
+                self._detect_multiline_end_state(text, offset)
+            )
         except Exception:
-            # Si hay error en el resaltado, simplemente no resaltamos
             pass
 
 
@@ -2699,11 +2808,7 @@ class SyntaxHighlighterWithErrors(PythonSyntaxHighlighter):
     
     def update_theme(self, theme_settings):
         """Actualiza el tema del resaltador de sintaxis"""
-        self.theme_settings = theme_settings
-        # Reconfigurar formatos con nuevos colores de tema
-        self._setup_formats()
-        # Volver a resaltar todo el documento
-        self.rehighlight()
+        super().update_theme(theme_settings)
 
 
 class FileExplorerWidget(QTreeWidget):
@@ -3519,18 +3624,10 @@ class PythonCodeEditor(QPlainTextEdit):
             'finally', 'def', 'class', 'async def', 'match', 'case'
         }
         
-        # Configurar estilo
-        self.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #2C3E50;
-                color: #ECF0F1;
-                border: 2px solid #34495E;
-                border-radius: 5px;
-                padding: 10px;
-                line-height: 1.2;
-                selection-background-color: #3498DB;
-            }
-        """)
+        # Configurar estilo (sin `color` en QSS: anula el resaltado de sintaxis)
+        default_editor = AppConfig.THEMES[AppConfig.DEFAULT_THEME]
+        self.setStyleSheet(_editor_surface_stylesheet(default_editor))
+        _apply_editor_text_palette(self, default_editor)
     
     def lineNumberAreaWidth(self):
         """Calcula el ancho necesario para el área de numeración"""
@@ -4068,18 +4165,17 @@ class TabbedCodeEditor(QTabWidget):
         
         # Obtener configuraciones de tema actuales
         from config import AppConfig
-        default_theme = AppConfig.DEFAULT_THEME
-        settings = AppConfig.THEMES[default_theme].copy()
-        
-        theme_settings = {
-            'syntax_colors': settings.get('syntax_colors', {}),
-            'editor_colors': settings.get('editor_colors', {}),
-            'font_settings': settings.get('font_settings', {})
-        }
+        if self.parent_editor and getattr(self.parent_editor, "current_preferences", None):
+            theme_settings = self.parent_editor.current_preferences.copy()
+        else:
+            default_theme = AppConfig.DEFAULT_THEME
+            theme_settings = AppConfig.THEMES[default_theme].copy()
         
         # Configurar resaltado de sintaxis con soporte para errores y temas
         syntax_highlighter = SyntaxHighlighterWithErrors(editor.document(), theme_settings)
         editor.syntax_highlighter = syntax_highlighter  # Guardar referencia en el editor
+        editor.setStyleSheet(_editor_surface_stylesheet(theme_settings))
+        _apply_editor_text_palette(editor, theme_settings)
         self._configure_editor_for_path(editor, file_path)
         
         # Aplicar contenido si se proporciona
@@ -5306,10 +5402,9 @@ class CodeEditorViewPySide:
         # Mantener referencia al editor actual para compatibilidad
         self.input_text = self.tabbed_editor.get_current_editor()
         
-        # Configurar resaltado de sintaxis para el editor inicial
-        if self.input_text:
-            self.syntax_highlighter = SyntaxHighlighterWithErrors(self.input_text.document())
-            self.input_text.syntax_highlighter = self.syntax_highlighter  # Guardar referencia
+        # El resaltador ya se crea en TabbedCodeEditor.new_tab()
+        if self.input_text and hasattr(self.input_text, "syntax_highlighter"):
+            self.syntax_highlighter = self.input_text.syntax_highlighter
         
         splitter.addWidget(input_frame)
         
@@ -6544,46 +6639,19 @@ class CodeEditorViewPySide:
         editor_font = QFont(settings_dict['editor_font_family'], settings_dict['editor_font_size'])
         self.input_text.setFont(editor_font)
         
-        # Aplicar estilos del editor
-        editor_style = f"""
-            QPlainTextEdit {{
-                background-color: {settings_dict['editor_bg_color']};
-                color: {settings_dict['editor_text_color']};
-                border: 2px solid #34495E;
-                border-radius: 5px;
-                padding: 10px;
-                line-height: 1.2;
-                selection-background-color: {settings_dict['editor_selection_color']};
-            }}
-        """
+        # Aplicar estilos del editor (sin `color` en QSS)
+        editor_style = _editor_surface_stylesheet(settings_dict)
         self.input_text.setStyleSheet(editor_style)
+        _apply_editor_text_palette(self.input_text, settings_dict)
         
         # Aplicar tema a todos los editores de pestañas si existe el widget de pestañas
         if hasattr(self, 'tab_widget'):
             for i in range(self.tab_widget.count()):
                 editor = self.tab_widget.widget(i)
                 if hasattr(editor, 'syntax_highlighter'):
-                    # Preparar configuraciones de tema
-                    theme_settings = {
-                        'syntax_colors': settings_dict.get('syntax_colors', {}),
-                        'editor_colors': settings_dict.get('editor_colors', {}),
-                        'font_settings': settings_dict.get('font_settings', {})
-                    }
-                    
-                    # Actualizar resaltador de sintaxis con nuevo tema
-                    editor.syntax_highlighter.update_theme(theme_settings)
-                    
-                    # Aplicar estilos del editor a la pestaña
-                    tab_editor_style = f"""
-                        QPlainTextEdit {{
-                            background-color: {settings_dict.get('editor_bg_color', '#2C3E50')};
-                            color: {settings_dict.get('editor_text_color', '#ECF0F1')};
-                            border: 1px solid #34495E;
-                            border-radius: 3px;
-                            selection-background-color: {settings_dict.get('editor_selection_color', '#3498DB')};
-                        }}
-                    """
-                    editor.setStyleSheet(tab_editor_style)
+                    editor.syntax_highlighter.update_theme(settings_dict)
+                    editor.setStyleSheet(_editor_surface_stylesheet(settings_dict))
+                    _apply_editor_text_palette(editor, settings_dict)
                     
                     # Aplicar fuente
                     tab_font = QFont(
