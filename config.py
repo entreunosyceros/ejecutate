@@ -53,6 +53,10 @@ class AppConfig:
     # Configuración de temas múltiples
     THEMES_ENABLED = True
     DEFAULT_THEME = "Oscuro"
+
+    # Tipografía UI (separada del editor)
+    UI_FONT_FAMILY = "Inter"
+    UI_FONT_SIZE = 13
     
     # Configuración del terminal integrado
     TERMINAL_ENABLED = True
@@ -248,6 +252,35 @@ class AppConfig:
             'syntax_builtin_color': '#4EC9B0',
             'syntax_function_color': '#DCDCAA',
             'syntax_class_color': '#4EC9B0'
+        }
+        ,
+        "Café": {
+            # Editor
+            'editor_bg_color': '#2B1B12',
+            'editor_text_color': '#F3E7DA',
+            'editor_selection_color': '#5C3A25',
+            'editor_font_family': 'Consolas',
+            'editor_font_size': 12,
+
+            # Numeración de líneas
+            'line_number_bg_color': '#23160F',
+            'line_number_text_color': '#CDB8A6',
+
+            # Área de salida
+            'output_bg_color': '#2B1B12',
+            'output_text_color': '#F3E7DA',
+            'output_font_family': 'Consolas',
+            'output_font_size': 11,
+
+            # Resaltado de sintaxis (cálido)
+            'syntax_keyword_color': '#D69A5A',
+            'syntax_string_color': '#CFAF8A',
+            'syntax_comment_color': '#A08978',
+            'syntax_number_color': '#E2B07A',
+            'syntax_operator_color': '#F3E7DA',
+            'syntax_builtin_color': '#B38B5D',
+            'syntax_function_color': '#E2B07A',
+            'syntax_class_color': '#D69A5A'
         }
     }
     

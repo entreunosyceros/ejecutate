@@ -12,7 +12,8 @@ import fnmatch
 from pathlib import Path
 
 # Importar el nuevo terminal
-from new_terminal import IntegratedTerminalNew
+from utils.new_terminal import IntegratedTerminalNew
+from utils.file_icons import explorer_folder_icon, explorer_icon_for_path, explorer_icon_size
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QLabel, QTextEdit, QMessageBox,
@@ -20,8 +21,10 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
                                QComboBox, QSpinBox, QColorDialog, QGridLayout, QGroupBox, QTabWidget,
                                QSystemTrayIcon, QMenu, QListWidget, QListWidgetItem, QTreeWidget,
                                QTreeWidgetItem, QInputDialog, QAbstractItemView, QTabBar, QToolTip,
-                               QLineEdit, QCheckBox, QScrollArea)
+                               QLineEdit, QCheckBox, QScrollArea, QToolButton, QStackedWidget, QGraphicsOpacityEffect)
 from PySide6.QtCore import Qt, QTimer, QUrl, QRect, QSettings, QPoint, QThread, Signal, QProcess
+from PySide6.QtCore import QSize
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QFont, QTextCharFormat, QColor, QSyntaxHighlighter, QTextDocument, QAction, QPixmap, QDesktopServices, QPainter, QFontDatabase, QIcon, QKeyEvent, QTextCursor
 from pygments import highlight
 from pygments.lexers import PythonLexer
@@ -29,6 +32,590 @@ from pygments.formatters import NullFormatter
 from pygments.token import Token
 from config import AppConfig
 from .documentation_dialog import DocumentationDialog
+
+# Estilos globales (Cursor-like)
+def _load_stylesheet(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return ""
+
+
+def _maybe_load_svg_icon(svg_path: str) -> QIcon:
+    """Carga un icono SVG si QtSvg está disponible; fallback a QIcon normal."""
+    try:
+        from PySide6.QtSvg import QSvgRenderer  # type: ignore
+        renderer = QSvgRenderer(svg_path)
+        if not renderer.isValid():
+            return QIcon(svg_path)
+        pix = QPixmap(24, 24)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        renderer.render(p)
+        p.end()
+        return QIcon(pix)
+    except Exception:
+        return QIcon(svg_path)
+
+
+def _render_svg_pixmap(svg_path: str, size: int) -> QPixmap:
+    """Renderiza SVG a pixmap (fallback a QPixmap directo)."""
+    try:
+        from PySide6.QtSvg import QSvgRenderer  # type: ignore
+        r = QSvgRenderer(svg_path)
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        if r.isValid():
+            p = QPainter(pix)
+            r.render(p)
+            p.end()
+            return pix
+    except Exception:
+        pass
+    pix = QPixmap(svg_path)
+    if not pix.isNull():
+        return pix.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    return QPixmap(size, size)
+
+
+class _CoffeeEventFilter(QObject):
+    """Filtro global para salir de Modo Café con input."""
+
+    def __init__(self, view):
+        super().__init__()
+        self.view = view
+
+    def eventFilter(self, obj, event):
+        try:
+            if not getattr(self.view, "_coffee_active", False):
+                return False
+
+            # Evitar salir inmediatamente por el mismo click que lo activó
+            if getattr(self.view, "_coffee_ignore_next_event", False):
+                self.view._coffee_ignore_next_event = False
+                return True
+
+            t = event.type()
+            if t in (event.Type.MouseMove, event.Type.KeyPress):
+                self.view.disable_coffee_mode()
+                return True
+        except Exception:
+            pass
+        return False
+
+
+class CommandPaletteDialog(QDialog):
+    """Command palette estilo VS Code/Cursor (búsqueda rápida de comandos/archivos)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Command Palette")
+        self.setModal(True)
+        self.setMinimumWidth(640)
+        self.setObjectName("Panel")
+
+        self._items = []  # list[dict]: {kind, label, detail, callback}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        self.query = QLineEdit()
+        self.query.setPlaceholderText("Escribe para buscar…  (usa '>' para comandos)")
+        layout.addWidget(self.query)
+
+        self.list = QListWidget()
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        layout.addWidget(self.list, 1)
+
+        self.query.textChanged.connect(self._refresh)
+        self.query.returnPressed.connect(self._accept_current)
+        self.list.itemActivated.connect(lambda _item: self._accept_current())
+
+    def set_items(self, items):
+        self._items = items or []
+        self._refresh()
+        if self.list.count():
+            self.list.setCurrentRow(0)
+
+    def _refresh(self):
+        q = (self.query.text() or "").strip()
+        command_only = q.startswith(">")
+        if command_only:
+            q = q[1:].lstrip()
+
+        self.list.clear()
+
+        def score(item):
+            label = (item.get("label") or "").lower()
+            detail = (item.get("detail") or "").lower()
+            qq = q.lower()
+            if not qq:
+                return 0
+            if qq in label:
+                return 0
+            if qq in detail:
+                return 1
+            return 10
+
+        filtered = []
+        for it in self._items:
+            if command_only and it.get("kind") != "command":
+                continue
+            if not command_only and it.get("kind") not in ("command", "file"):
+                continue
+            if not q:
+                filtered.append(it)
+                continue
+            hay = (it.get("label", "") + " " + it.get("detail", "")).lower()
+            if q.lower() in hay:
+                filtered.append(it)
+
+        filtered.sort(key=score)
+
+        for it in filtered[:200]:
+            text = it.get("label", "")
+            detail = it.get("detail")
+            if detail:
+                text = f"{text} — {detail}"
+            item = QListWidgetItem(text)
+            item.setData(Qt.ItemDataRole.UserRole, it)
+            self.list.addItem(item)
+
+    def _accept_current(self):
+        item = self.list.currentItem()
+        if not item:
+            self.reject()
+            return
+        payload = item.data(Qt.ItemDataRole.UserRole) or {}
+        cb = payload.get("callback")
+        try:
+            if callable(cb):
+                cb()
+        finally:
+            self.accept()
+
+
+class ProblemsPanel(QWidget):
+    """Panel de 'Problems' tipo VS Code: lista errores/warnings."""
+
+    def __init__(self, parent_editor=None):
+        super().__init__(parent_editor.window if hasattr(parent_editor, "window") else None)
+        self.parent_editor = parent_editor
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        header = QLabel("Problems")
+        header.setStyleSheet("font-weight: 600; padding: 6px 2px;")
+        layout.addWidget(header)
+
+        self.list = QListWidget()
+        self.list.itemActivated.connect(self._on_item_activated)
+        layout.addWidget(self.list, 1)
+
+    def set_errors(self, errors):
+        self.list.clear()
+        if not errors:
+            self.list.addItem("No problems 🎉")
+            return
+        for e in errors:
+            try:
+                typ = getattr(e, "error_type", "info").upper()
+                ln = getattr(e, "line_number", 1)
+                col = getattr(e, "column", 0)
+                msg = getattr(e, "message", "")
+                item = QListWidgetItem(f"{typ}  Ln {ln}, Col {col}: {msg}")
+                item.setData(Qt.ItemDataRole.UserRole, (ln, col))
+                self.list.addItem(item)
+            except Exception:
+                self.list.addItem(str(e))
+
+    def _on_item_activated(self, item):
+        try:
+            pos = item.data(Qt.ItemDataRole.UserRole)
+            if not pos or not self.parent_editor:
+                return
+            ln, col = pos
+            self.parent_editor.jump_to_line_col(int(ln), int(col))
+        except Exception:
+            pass
+
+
+class SidebarSearchPanel(QWidget):
+    """Panel de búsqueda embebido (estilo VS Code), sin usar diálogos modales."""
+
+    def __init__(self, parent_editor):
+        super().__init__()
+        self.parent_editor = parent_editor
+        self._last_results = []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        title = QLabel("Search")
+        title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(title)
+
+        self.query = QLineEdit()
+        self.query.setPlaceholderText("Buscar…")
+        layout.addWidget(self.query)
+
+        # Replace
+        self.replace = QLineEdit()
+        self.replace.setPlaceholderText("Reemplazar por…")
+        layout.addWidget(self.replace)
+
+        opts = QGridLayout()
+        self.opt_case = QCheckBox("Aa")
+        self.opt_case.setToolTip("Distinguir mayúsculas/minúsculas")
+        self.opt_word = QCheckBox("Ab")
+        self.opt_word.setToolTip("Palabra completa")
+        self.opt_regex = QCheckBox(".*")
+        self.opt_regex.setToolTip("Regex")
+        self.opt_in_files = QCheckBox("En archivos")
+        self.opt_in_files.setToolTip("Buscar en el directorio raíz del explorador")
+        opts.addWidget(self.opt_case, 0, 0)
+        opts.addWidget(self.opt_word, 0, 1)
+        opts.addWidget(self.opt_regex, 0, 2)
+        opts.addWidget(self.opt_in_files, 0, 3)
+        layout.addLayout(opts)
+
+        btns = QHBoxLayout()
+        self.btn_find = QPushButton("Buscar")
+        self.btn_find.setProperty("variant", "primary")
+        self.btn_replace = QPushButton("Reemplazar")
+        self.btn_replace_all = QPushButton("Reemplazar todo")
+        btns.addWidget(self.btn_find)
+        btns.addWidget(self.btn_replace)
+        btns.addWidget(self.btn_replace_all)
+        layout.addLayout(btns)
+
+        self.results_label = QLabel("0 resultados")
+        self.results_label.setStyleSheet("color: #AAAAAA;")
+        layout.addWidget(self.results_label)
+
+        self.results = QListWidget()
+        self.results.itemActivated.connect(self._open_result)
+        self.results.currentItemChanged.connect(lambda _cur, _prev: self._preview_current())
+        layout.addWidget(self.results, 1)
+
+        nav = QHBoxLayout()
+        self.btn_prev = QPushButton("Prev")
+        self.btn_next = QPushButton("Next")
+        nav.addWidget(self.btn_prev)
+        nav.addWidget(self.btn_next)
+        nav.addStretch()
+        layout.addLayout(nav)
+
+        self.btn_find.clicked.connect(self.refresh_results)
+        self.btn_replace.clicked.connect(self.replace_current)
+        self.btn_replace_all.clicked.connect(self.replace_all)
+        self.btn_prev.clicked.connect(lambda: self._step_result(-1))
+        self.btn_next.clicked.connect(lambda: self._step_result(1))
+        self.query.textChanged.connect(lambda: self.refresh_results(debounced=True))
+        self.query.returnPressed.connect(self.refresh_results)
+
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(150)
+        self._search_timer.timeout.connect(self.refresh_results)
+
+    def refresh_results(self, debounced=False):
+        if debounced:
+            self._search_timer.stop()
+            self._search_timer.start()
+            return
+        q = self.query.text()
+        self.results.clear()
+        self._last_results = []
+        if not q:
+            self.results_label.setText("0 resultados")
+            try:
+                self.parent_editor.set_search_highlights([])
+            except Exception:
+                pass
+            return
+
+        if self.opt_in_files.isChecked():
+            # En búsqueda multi-archivo no resaltamos el editor actual
+            try:
+                self.parent_editor.set_search_highlights([])
+            except Exception:
+                pass
+            self._search_in_files(q)
+        else:
+            self._search_in_current(q)
+
+        self.results_label.setText(f"{len(self._last_results)} resultados")
+
+    def _compile_pattern(self, q: str):
+        flags = 0 if self.opt_case.isChecked() else re.IGNORECASE
+        if not self.opt_regex.isChecked():
+            q = re.escape(q)
+        if self.opt_word.isChecked():
+            q = r"\b" + q + r"\b"
+        return re.compile(q, flags)
+
+    def _search_in_current(self, q: str):
+        ed = getattr(self.parent_editor, "tabbed_editor", None)
+        editor = ed.get_current_editor() if ed else None
+        if not editor:
+            return
+        text = editor.toPlainText()
+        try:
+            pat = self._compile_pattern(q)
+        except Exception as e:
+            self.results.addItem(f"Regex inválida: {e}")
+            return
+
+        # Precompute line starts
+        line_starts = [0]
+        for m in re.finditer(r"\n", text):
+            line_starts.append(m.end())
+
+        def to_line_col(idx):
+            # binary search
+            lo, hi = 0, len(line_starts) - 1
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                if line_starts[mid] <= idx:
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            line = max(0, lo - 1)
+            col = idx - line_starts[line]
+            return line + 1, col + 1
+
+        for it, m in enumerate(pat.finditer(text)):
+            if it >= 500:
+                break
+            start = m.start()
+            ln, col = to_line_col(start)
+            line_text = editor.document().findBlockByNumber(ln - 1).text()
+            snippet = line_text.strip()
+            payload = {"kind": "current", "ln": ln, "col": col, "start": start, "end": m.end()}
+            item = QListWidgetItem(f"Ln {ln}, Col {col}: {snippet}")
+            item.setData(Qt.ItemDataRole.UserRole, payload)
+            self.results.addItem(item)
+            self._last_results.append(payload)
+
+        # Highlight permanente de todos los matches (limitado)
+        try:
+            ranges = [(p["start"], p["end"]) for p in self._last_results if isinstance(p.get("start"), int) and isinstance(p.get("end"), int)]
+            self.parent_editor.set_search_highlights(ranges[:300])
+        except Exception:
+            pass
+
+    def _search_in_files(self, q: str):
+        root = None
+        try:
+            fe = getattr(self.parent_editor, "file_explorer", None)
+            root = getattr(fe, "current_root_path", None)
+        except Exception:
+            root = None
+        if not root or not os.path.isdir(root):
+            self.results.addItem("No hay raíz válida en el explorador.")
+            return
+        try:
+            pat = self._compile_pattern(q)
+        except Exception as e:
+            self.results.addItem(f"Regex inválida: {e}")
+            return
+
+        patterns = getattr(AppConfig, "SEARCH_FILE_PATTERNS", ["*.py"])
+        exclude = set(getattr(AppConfig, "SEARCH_EXCLUDE_PATTERNS", []))
+
+        added = 0
+        for r, dirs, files in os.walk(root):
+            # skip excluded dirs
+            dirs[:] = [d for d in dirs if d not in exclude]
+            for fn in files:
+                if added >= 500:
+                    return
+                ok = any(fnmatch.fnmatch(fn, p) for p in patterns)
+                if not ok:
+                    continue
+                fp = os.path.join(r, fn)
+                try:
+                    with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                except Exception:
+                    continue
+                for m in pat.finditer(content):
+                    if added >= 500:
+                        return
+                    # compute ln/col
+                    start = m.start()
+                    end = m.end()
+                    ln = content.count("\n", 0, start) + 1
+                    last_nl = content.rfind("\n", 0, start)
+                    col = start - (last_nl + 1) + 1
+                    line = content.splitlines()[ln - 1] if ln - 1 < len(content.splitlines()) else ""
+                    payload = {"kind": "file", "path": fp, "ln": ln, "col": col, "start": start, "end": end}
+                    item = QListWidgetItem(f"{os.path.relpath(fp, root)}  Ln {ln}, Col {col}: {line.strip()}")
+                    item.setData(Qt.ItemDataRole.UserRole, payload)
+                    self.results.addItem(item)
+                    self._last_results.append(payload)
+                    added += 1
+
+    def _open_result(self, item):
+        payload = item.data(Qt.ItemDataRole.UserRole) or {}
+        kind = payload.get("kind")
+        if kind == "file":
+            p = payload.get("path")
+            if p and hasattr(self.parent_editor, "tabbed_editor"):
+                self.parent_editor.tabbed_editor.load_file_in_tab(p)
+                # Selección diferida: el editor puede cambiar tras cargar
+                start = payload.get("start")
+                end = payload.get("end")
+                if isinstance(start, int) and isinstance(end, int):
+                    QTimer.singleShot(120, lambda s=start, e=end: self.parent_editor.select_range_absolute(s, e))
+                else:
+                    ln = int(payload.get("ln", 1))
+                    col = int(payload.get("col", 1))
+                    QTimer.singleShot(120, lambda l=ln, c=col: self.parent_editor.jump_to_line_col(l, c))
+                return
+        start = payload.get("start")
+        end = payload.get("end")
+        if isinstance(start, int) and isinstance(end, int):
+            self.parent_editor.select_range_absolute(start, end)
+        else:
+            ln = int(payload.get("ln", 1))
+            col = int(payload.get("col", 1))
+            self.parent_editor.jump_to_line_col(ln, col)
+
+    def replace_current(self):
+        try:
+            current = self.results.currentItem()
+            if not current:
+                return
+            payload = current.data(Qt.ItemDataRole.UserRole) or {}
+            if payload.get("kind") == "file":
+                self._open_result(current)
+                return
+            repl = self.replace.text()
+            ln = int(payload.get("ln", 1))
+            col = int(payload.get("col", 1))
+            ed = self.parent_editor.tabbed_editor.get_current_editor()
+            if not ed:
+                return
+            # select from start/end indices when available
+            start = payload.get("start")
+            end = payload.get("end")
+            if isinstance(start, int) and isinstance(end, int):
+                cur = ed.textCursor()
+                cur.setPosition(start)
+                cur.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                cur.insertText(repl)
+                ed.setTextCursor(cur)
+            else:
+                self.parent_editor.jump_to_line_col(ln, col)
+        finally:
+            self.refresh_results()
+
+    def replace_all(self):
+        q = self.query.text()
+        repl = self.replace.text()
+        if not q:
+            return
+        if self.opt_in_files.isChecked():
+            self._replace_all_in_files(q, repl)
+            self.refresh_results()
+            return
+        ed = self.parent_editor.tabbed_editor.get_current_editor()
+        if not ed:
+            return
+        text = ed.toPlainText()
+        try:
+            pat = self._compile_pattern(q)
+        except Exception:
+            return
+        new = pat.sub(repl, text)
+        if new != text:
+            ed.setPlainText(new)
+        self.refresh_results()
+
+    def _replace_all_in_files(self, q: str, repl: str):
+        """Reemplaza en archivos del root del explorador (limitado por patrones/excludes)."""
+        root = None
+        try:
+            fe = getattr(self.parent_editor, "file_explorer", None)
+            root = getattr(fe, "current_root_path", None)
+        except Exception:
+            root = None
+        if not root or not os.path.isdir(root):
+            return
+        try:
+            pat = self._compile_pattern(q)
+        except Exception:
+            return
+
+        patterns = getattr(AppConfig, "SEARCH_FILE_PATTERNS", ["*.py"])
+        exclude = set(getattr(AppConfig, "SEARCH_EXCLUDE_PATTERNS", []))
+
+        for r, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in exclude]
+            for fn in files:
+                ok = any(fnmatch.fnmatch(fn, p) for p in patterns)
+                if not ok:
+                    continue
+                fp = os.path.join(r, fn)
+                try:
+                    with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    new, n = pat.subn(repl, content)
+                    if n > 0 and new != content:
+                        with open(fp, "w", encoding="utf-8") as f:
+                            f.write(new)
+                except Exception:
+                    continue
+
+    def _step_result(self, delta: int):
+        try:
+            n = self.results.count()
+            if n <= 0:
+                return
+            idx = self.results.currentRow()
+            if idx < 0:
+                idx = 0
+            idx = (idx + delta) % n
+            self.results.setCurrentRow(idx)
+            self._preview_current()
+        except Exception:
+            pass
+
+    def _preview_current(self):
+        """Previsualiza (resalta) el resultado actual sin necesidad de 'activar'."""
+        try:
+            item = self.results.currentItem()
+            if not item:
+                return
+            payload = item.data(Qt.ItemDataRole.UserRole) or {}
+            kind = payload.get("kind")
+            if kind == "file":
+                # no abrimos el archivo en preview; solo en activación
+                return
+            start = payload.get("start")
+            end = payload.get("end")
+            if isinstance(start, int) and isinstance(end, int):
+                self.parent_editor.select_range_absolute(start, end, focus=False)
+        except Exception:
+            pass
+
+# Importar los nuevos módulos educativos
+try:
+    from analyzers.code_analyzer import analyze_code
+    from analyzers.smart_completer import get_smart_completions
+    from analyzers.tutorial_system import get_tutorial_manager
+    from analyzers.visual_debugger import get_debugger_manager
+    from analyzers.package_manager import get_package_manager
+    EDUCATIONAL_FEATURES_AVAILABLE = True
+except ImportError as e:
+    print(f"Algunas funciones educativas no están disponibles: {e}")
+    EDUCATIONAL_FEATURES_AVAILABLE = False
 
 
 class CustomSyntaxError:
@@ -50,11 +637,13 @@ class SyntaxChecker(QThread):
         super().__init__()
         self.code_to_check = ""
         self.should_check = False
+        self.check_level = "fast"  # fast | full
         
-    def set_code(self, code):
+    def set_code(self, code, level="fast"):
         """Establece el código a verificar"""
         self.code_to_check = code
         self.should_check = True
+        self.check_level = level
         
     def run(self):
         """Ejecuta la verificación de sintaxis"""
@@ -81,32 +670,34 @@ class SyntaxChecker(QThread):
                 message=f"Error inesperado: {str(e)}",
                 error_type="error"
             ))
-        
-        # Verificar variables no utilizadas
-        unused_vars = self._find_unused_variables()
-        for var_info in unused_vars:
-            errors.append(CustomSyntaxError(
-                line_number=var_info['line'],
-                column=var_info['column'],
-                message=f"Variable '{var_info['name']}' definida pero no utilizada",
-                error_type="warning",
-                suggestion=f"Considera eliminar la variable '{var_info['name']}' o usarla en tu código"
-            ))
-        
-        # Verificar imports no utilizados
-        unused_imports = self._find_unused_imports()
-        for import_info in unused_imports:
-            errors.append(CustomSyntaxError(
-                line_number=import_info['line'],
-                column=0,
-                message=f"Import '{import_info['name']}' no utilizado",
-                error_type="warning",
-                suggestion=f"Considera eliminar 'import {import_info['name']}' si no lo necesitas"
-            ))
-        
-        # Verificar problemas comunes
-        common_issues = self._find_common_issues()
-        errors.extend(common_issues)
+
+        # Checks más pesados solo en nivel "full"
+        if self.check_level == "full":
+            # Verificar variables no utilizadas
+            unused_vars = self._find_unused_variables()
+            for var_info in unused_vars:
+                errors.append(CustomSyntaxError(
+                    line_number=var_info['line'],
+                    column=var_info['column'],
+                    message=f"Variable '{var_info['name']}' definida pero no utilizada",
+                    error_type="warning",
+                    suggestion=f"Considera eliminar la variable '{var_info['name']}' o usarla en tu código"
+                ))
+            
+            # Verificar imports no utilizados
+            unused_imports = self._find_unused_imports()
+            for import_info in unused_imports:
+                errors.append(CustomSyntaxError(
+                    line_number=import_info['line'],
+                    column=0,
+                    message=f"Import '{import_info['name']}' no utilizado",
+                    error_type="warning",
+                    suggestion=f"Considera eliminar 'import {import_info['name']}' si no lo necesitas"
+                ))
+            
+            # Verificar problemas comunes
+            common_issues = self._find_common_issues()
+            errors.extend(common_issues)
         
         self.errors_found.emit(errors)
         self.should_check = False
@@ -1080,7 +1671,36 @@ class PreferencesDialog(QDialog):
             'formatter_auto_spacing': AppConfig.FORMATTER_AUTO_SPACING
         })
         
+        # Modo Café
+        theme_settings.setdefault(
+            "coffee_message",
+            "Mueve el ratón o pulsa cualquier tecla para volver."
+        )
+
         return theme_settings
+
+    def _create_coffee_tab(self):
+        """Crea el tab de Modo Café."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        group = QGroupBox("☕ Modo Café")
+        g_layout = QVBoxLayout(group)
+
+        g_layout.addWidget(QLabel("Mensaje mostrado durante el Modo Café:"))
+        self.coffee_message_input = QLineEdit()
+        self.coffee_message_input.setPlaceholderText("Escribe tu mensaje…")
+        self.coffee_message_input.setText(self.current_settings.get("coffee_message", ""))
+        self.coffee_message_input.textChanged.connect(lambda _t: self._apply_preview())
+        g_layout.addWidget(self.coffee_message_input)
+
+        hint = QLabel("Se mostrará en el overlay de pausa (Modo Café).")
+        hint.setStyleSheet("color: #888;")
+        g_layout.addWidget(hint)
+
+        layout.addWidget(group)
+        layout.addStretch()
+        return widget
     
     def _create_themes_tab(self):
         """Crea el tab de selección de temas"""
@@ -1288,6 +1908,10 @@ class PreferencesDialog(QDialog):
         # Tab Colores
         colors_tab = self._create_colors_tab()
         tabs.addTab(colors_tab, "🎨 Colores")
+
+        # Tab Café
+        coffee_tab = self._create_coffee_tab()
+        tabs.addTab(coffee_tab, "☕ Café")
         
         layout.addWidget(tabs)
         
@@ -1879,6 +2503,9 @@ def calcular(precio,descuento):
         self.new_settings['editor_font_size'] = self.editor_font_size.value()
         self.new_settings['output_font_family'] = self.output_font_combo.currentText()
         self.new_settings['output_font_size'] = self.output_font_size.value()
+
+        if hasattr(self, "coffee_message_input"):
+            self.new_settings["coffee_message"] = self.coffee_message_input.text()
         
         # Configuraciones del formatter (si existen los controles)
         if hasattr(self, 'formatter_enabled_checkbox'):
@@ -2090,8 +2717,10 @@ class FileExplorerWidget(QTreeWidget):
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.itemDoubleClicked.connect(self.open_file)
         self.itemExpanded.connect(self.on_item_expanded)  # Manejar expansión
+        self.itemCollapsed.connect(self._on_item_collapsed)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)  # Selección única
         self.setIndentation(20)  # Indentación más visible
+        self.setIconSize(explorer_icon_size())
         
         # Variables de estado
         self.current_root_path = os.path.expanduser("~")  # Comenzar en directorio home
@@ -2228,7 +2857,8 @@ class FileExplorerWidget(QTreeWidget):
             # Crear item raíz
             root_item = QTreeWidgetItem(self)
             root_name = os.path.basename(path) or path
-            root_item.setText(0, f"📂 {root_name}")
+            root_item.setText(0, root_name)
+            root_item.setIcon(0, explorer_folder_icon(opened=True))
             root_item.setData(0, Qt.ItemDataRole.UserRole, path)
             root_item.setExpanded(True)
             
@@ -2269,7 +2899,8 @@ class FileExplorerWidget(QTreeWidget):
                 tree_item = QTreeWidgetItem(parent_item)
                 
                 if os.path.isdir(item_path):
-                    tree_item.setText(0, f"📁 {item_name}")
+                    tree_item.setText(0, item_name)
+                    tree_item.setIcon(0, explorer_folder_icon(opened=False))
                     tree_item.setData(0, Qt.ItemDataRole.UserRole, item_path)
                     # Agregar un item dummy para mostrar que tiene hijos
                     # Esto permite que aparezca el indicador de expansión
@@ -2281,20 +2912,8 @@ class FileExplorerWidget(QTreeWidget):
                     except PermissionError:
                         pass
                 else:
-                    # Determinar icono por extensión
-                    file_ext = os.path.splitext(item_name)[1].lower()
-                    if file_ext in ['.py']:
-                        icon = "🐍"
-                    elif file_ext in ['.txt', '.md']:
-                        icon = "📄"
-                    elif file_ext in ['.json', '.yaml', '.yml']:
-                        icon = "⚙️"
-                    elif file_ext in ['.ini', '.cfg']:
-                        icon = "🔧"
-                    else:
-                        icon = "📄"
-                    
-                    tree_item.setText(0, f"{icon} {item_name}")
+                    tree_item.setText(0, item_name)
+                    tree_item.setIcon(0, explorer_icon_for_path(item_path))
                     tree_item.setData(0, Qt.ItemDataRole.UserRole, item_path)
                     
                     # Resaltar archivos soportados
@@ -2354,8 +2973,18 @@ class FileExplorerWidget(QTreeWidget):
         else:
             print(f"❌ Ruta no válida: {file_path}")  # Debug
     
+    def _on_item_collapsed(self, item):
+        """Actualiza el icono de carpeta al contraer."""
+        file_path = item.data(0, Qt.ItemDataRole.UserRole)
+        if file_path and os.path.isdir(file_path):
+            item.setIcon(0, explorer_folder_icon(opened=False))
+
     def on_item_expanded(self, item):
         """Maneja la expansión de items para carga bajo demanda"""
+        file_path = item.data(0, Qt.ItemDataRole.UserRole)
+        if file_path and os.path.isdir(file_path):
+            item.setIcon(0, explorer_folder_icon(opened=True))
+
         # Verificar si el primer hijo es un item dummy
         if item.childCount() == 1:
             first_child = item.child(0)
@@ -2852,6 +3481,8 @@ class LineNumberArea(QWidget):
 
 class PythonCodeEditor(QPlainTextEdit):
     """Editor de código especializado para Python con indentación automática y numeración de líneas"""
+
+    syntaxErrorsChanged = Signal(list)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -2869,9 +3500,8 @@ class PythonCodeEditor(QPlainTextEdit):
         
         # Conectar señales para actualizar la numeración
         self.document().blockCountChanged.connect(self.updateLineNumberAreaWidth)
-        self.verticalScrollBar().valueChanged.connect(self.updateLineNumberArea)
-        self.textChanged.connect(self.updateLineNumberArea)
-        self.cursorPositionChanged.connect(self.updateLineNumberArea)
+        # updateRequest(rect, dy) es la vía estándar/eficiente para actualizar el gutter
+        self.updateRequest.connect(self.updateLineNumberArea)
         
         # Conectar señal para autocompletado
         self.textChanged.connect(self.on_text_changed)
@@ -2885,6 +3515,12 @@ class PythonCodeEditor(QPlainTextEdit):
         self.syntax_check_timer.setSingleShot(True)
         self.syntax_check_timer.timeout.connect(self.check_syntax)
         self.syntax_check_timer.setInterval(1000)  # 1 segundo de delay
+
+        # Timer adicional (más lento) para análisis pesado cuando el usuario “para”
+        self.syntax_check_timer_full = QTimer()
+        self.syntax_check_timer_full.setSingleShot(True)
+        self.syntax_check_timer_full.timeout.connect(self.check_syntax_full)
+        self.syntax_check_timer_full.setInterval(2500)
         
         # Conectar textChanged para verificación de sintaxis
         self.textChanged.connect(self.on_text_changed_syntax)
@@ -2930,14 +3566,19 @@ class PythonCodeEditor(QPlainTextEdit):
     
     def updateLineNumberArea(self, rect=None, dy=0):
         """Actualiza el área de numeración cuando cambia el contenido"""
+        # Compat: algunos callers antiguos enviaban (dy) suelto; normalizamos.
+        if isinstance(rect, int) and dy == 0:
+            dy = rect
+            rect = QRect()
+
         if dy:
             self.lineNumberArea.scroll(0, dy)
         else:
-            self.lineNumberArea.update(0, rect.y() if rect else 0, 
-                                     self.lineNumberArea.width(), 
-                                     rect.height() if rect else self.lineNumberArea.height())
+            if rect is None:
+                rect = self.viewport().rect()
+            self.lineNumberArea.update(0, rect.y(), self.lineNumberArea.width(), rect.height())
         
-        if rect and rect.contains(self.viewport().rect()):
+        if rect is not None and rect.contains(self.viewport().rect()):
             self.updateLineNumberAreaWidth(0)
     
     def resizeEvent(self, event):
@@ -3231,18 +3872,42 @@ class PythonCodeEditor(QPlainTextEdit):
         # Reiniciar el timer para verificación
         self.syntax_check_timer.stop()
         self.syntax_check_timer.start()
+
+        # Programar chequeo pesado si el archivo no es demasiado grande
+        self.syntax_check_timer_full.stop()
+        self.syntax_check_timer_full.start()
     
     def check_syntax(self):
         """Inicia la verificación de sintaxis en el hilo separado"""
         code = self.toPlainText()
         if code.strip():  # Solo verificar si hay código
-            self.syntax_checker.set_code(code)
+            self.syntax_checker.set_code(code, level="fast")
             if not self.syntax_checker.isRunning():
                 self.syntax_checker.start()
+
+    def check_syntax_full(self):
+        """Chequeo pesado (unused imports/vars + heurísticas), solo en documentos pequeños/medianos."""
+        try:
+            code = self.toPlainText()
+            if not code.strip():
+                return
+            # Umbral simple para evitar freezes en archivos grandes
+            if len(code) > 120_000 or self.document().blockCount() > 4000:
+                return
+            self.syntax_checker.set_code(code, level="full")
+            if not self.syntax_checker.isRunning():
+                self.syntax_checker.start()
+        except Exception:
+            pass
     
     def update_syntax_errors(self, errors):
         """Actualiza los errores de sintaxis encontrados"""
         self.current_syntax_errors = errors
+
+        try:
+            self.syntaxErrorsChanged.emit(errors)
+        except Exception:
+            pass
         
         # Si el editor tiene un resaltador de sintaxis con errores, actualizarlo
         if hasattr(self, 'syntax_highlighter') and isinstance(self.syntax_highlighter, SyntaxHighlighterWithErrors):
@@ -4385,6 +5050,21 @@ class CodeEditorViewPySide:
         self.window = QMainWindow()
         self.window.setWindowTitle(AppConfig.WINDOW_TITLE + " - PySide6")
         self.window.setGeometry(100, 100, 1000, 700)
+
+        # Aplicar fuente y tema global estilo Cursor
+        try:
+            ui_font = QFont(AppConfig.UI_FONT_FAMILY, AppConfig.UI_FONT_SIZE)
+            self.app.setFont(ui_font)
+        except Exception:
+            pass
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            qss_path = os.path.join(os.path.dirname(base_dir), "styles", "cursor_dark.qss")
+            qss = _load_stylesheet(qss_path)
+            if qss:
+                self.app.setStyleSheet(qss)
+        except Exception:
+            pass
         
         # Configurar el evento de cierre de ventana
         self.window.closeEvent = self._handle_close_event
@@ -4395,48 +5075,114 @@ class CodeEditorViewPySide:
         # Widget central
         central_widget = QWidget()
         self.window.setCentralWidget(central_widget)
+        self._central_widget = central_widget
 
         # Layout principal
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(5, 5, 5, 5)  # Márgenes más pequeños
         
-        # Título con tamaño fijo
-        title_label = QLabel("🐍 Editor de Código Python con Resaltado de Sintaxis")
-        title_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                font-weight: bold;
-                color: #2C3E50;
-                padding: 8px;
-                background-color: #ECF0F1;
-                border-radius: 5px;
-                margin-bottom: 5px;
-                min-height: 35px;
-                max-height: 35px;
-            }
-        """)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(title_label)
+        # Header compacto (Cursor-like): evitamos un banner grande
+        header = QWidget()
+        header.setObjectName("Panel")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 6, 8, 6)
+        header_title = QLabel("Ejecútalo!")
+        header_title.setStyleSheet("font-weight: 600;")
+        header_layout.addWidget(header_title)
+        header_layout.addStretch()
+        # Botón Modo Café (bloquea pantalla) - derecha
+        self.coffee_btn = QToolButton()
+        self.coffee_btn.setObjectName("ActivityButton")
+        self.coffee_btn.setToolTip("Modo Café (pausa)")
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            coffee_svg = os.path.join(os.path.dirname(base_dir), "assets", "coffee", "coffee.svg")
+            self.coffee_btn.setIcon(_maybe_load_svg_icon(coffee_svg))
+            self.coffee_btn.setIconSize(QSize(18, 18))
+        except Exception:
+            self.coffee_btn.setText("☕")
+        self.coffee_btn.clicked.connect(self.toggle_coffee_mode)
+        header_layout.addWidget(self.coffee_btn)
+        main_layout.addWidget(header)
+
+        # Status bar (tipo VS Code)
+        try:
+            sb = self.window.statusBar()
+            sb.showMessage("Listo")
+            self._status_left = QLabel("Listo")
+            self._status_pos = QLabel("Ln 1, Col 1")
+            self._status_theme = QLabel(self._get_current_settings().get("current_theme", AppConfig.DEFAULT_THEME))
+            sb.addPermanentWidget(self._status_pos)
+            sb.addPermanentWidget(self._status_theme)
+        except Exception:
+            pass
         
         # Splitter horizontal principal (explorador + editor) que ocupa el resto del espacio
         main_horizontal_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(main_horizontal_splitter, 1)  # stretch factor 1 para que ocupe todo el espacio restante
+
+        # Activity bar (icon strip) a la izquierda, estilo Cursor/VS Code
+        self.activity_bar = QWidget()
+        self.activity_bar.setObjectName("ActivityBar")
+        activity_layout = QVBoxLayout(self.activity_bar)
+        activity_layout.setContentsMargins(0, 6, 0, 6)
+        activity_layout.setSpacing(0)
+
+        def _mk_btn(icon_path, tooltip, cb):
+            b = QToolButton()
+            b.setObjectName("ActivityButton")
+            b.setToolTip(tooltip)
+            b.setCheckable(False)
+            b.clicked.connect(cb)
+            b.setFixedWidth(44)
+            b.setFixedHeight(38)
+            if icon_path:
+                b.setIcon(_maybe_load_svg_icon(icon_path))
+                b.setIconSize(QSize(20, 20))
+            return b
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icons_dir = os.path.join(os.path.dirname(base_dir), "assets", "icons")
+        self.act_explorer = _mk_btn(os.path.join(icons_dir, "explorer.svg"), "Explorer", lambda: self._set_sidebar_tab(0))
+        self.act_search = _mk_btn(os.path.join(icons_dir, "search.svg"), "Search", lambda: self._set_sidebar_tab(1))
+        self.act_terminal = _mk_btn(os.path.join(icons_dir, "terminal.svg"), "Terminal", self.toggle_terminal)
+        self.act_settings = _mk_btn(os.path.join(icons_dir, "settings.svg"), "Settings", self.show_preferences_dialog)
+
+        activity_layout.addWidget(self.act_explorer)
+        activity_layout.addWidget(self.act_search)
+        activity_layout.addWidget(self.act_terminal)
+        activity_layout.addStretch()
+        activity_layout.addWidget(self.act_settings)
+
+        main_horizontal_splitter.addWidget(self.activity_bar)
         
         # Crear widget contenedor para el explorador con su barra de herramientas
         self.explorer_container = QWidget()
+        self.explorer_container.setObjectName("Panel")
         self.file_explorer_layout = QVBoxLayout(self.explorer_container)
         self.file_explorer_layout.setContentsMargins(0, 0, 0, 0)
         self.file_explorer_layout.setSpacing(0)
         
-        # Explorador de archivos lateral
+        # Sidebar tipo VS Code: tabs Explorer / Search
+        self.sidebar_tabs = QTabWidget()
+        self.sidebar_tabs.setDocumentMode(True)
+
+        # Explorer
+        explorer_tab = QWidget()
+        explorer_layout = QVBoxLayout(explorer_tab)
+        explorer_layout.setContentsMargins(0, 0, 0, 0)
+        explorer_layout.setSpacing(0)
         self.file_explorer = FileExplorerWidget(self)
-        
-        # Agregar barra de herramientas si existe
         if hasattr(self.file_explorer, 'toolbar_widget'):
-            self.file_explorer_layout.addWidget(self.file_explorer.toolbar_widget)
-        
-        # Agregar el explorador
-        self.file_explorer_layout.addWidget(self.file_explorer)
+            explorer_layout.addWidget(self.file_explorer.toolbar_widget)
+        explorer_layout.addWidget(self.file_explorer, 1)
+        self.sidebar_tabs.addTab(explorer_tab, "Explorer")
+
+        # Search (embebido)
+        self.sidebar_search = SidebarSearchPanel(self)
+        self.sidebar_tabs.addTab(self.sidebar_search, "Search")
+
+        self.file_explorer_layout.addWidget(self.sidebar_tabs, 1)
         
         # Configurar el contenedor del explorador
         self.explorer_container.setMaximumWidth(AppConfig.FILE_EXPLORER_WIDTH)
@@ -4458,8 +5204,8 @@ class CodeEditorViewPySide:
         input_layout = QVBoxLayout(input_frame)
         
         # Label para área de entrada
-        input_label = QLabel("📝 Código Python:")
-        input_label.setStyleSheet("font-weight: bold; color: #34495E; font-size: 14px;")
+        input_label = QLabel("Editor")
+        input_label.setStyleSheet("font-weight: 600;")
         input_layout.addWidget(input_label)
         
         # Editor con pestañas
@@ -4483,42 +5229,10 @@ class CodeEditorViewPySide:
         
         # Botón para ejecutar en terminal (ahora es el principal)
         self.execute_terminal_button = QPushButton("🚀 Ejecutar Código (Ctrl+Enter)")
-        self.execute_terminal_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27AE60;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #2ECC71;
-            }
-            QPushButton:pressed {
-                background-color: #229954;
-            }
-        """)
+        self.execute_terminal_button.setProperty("variant", "primary")
         
         self.clear_button = QPushButton("🗑️ Limpiar (Ctrl+L)")
-        self.clear_button.setStyleSheet("""
-            QPushButton {
-                background-color: #E74C3C;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #EC7063;
-            }
-            QPushButton:pressed {
-                background-color: #C0392B;
-            }
-        """)
+        self.clear_button.setProperty("variant", "danger")
         
         button_layout.addWidget(self.execute_terminal_button)
         button_layout.addWidget(self.clear_button)
@@ -4532,115 +5246,359 @@ class CodeEditorViewPySide:
         output_layout = QVBoxLayout(output_frame)
         
         # Label para área de características y terminal
-        output_label = QLabel("🌟 Características y Terminal:")
-        output_label.setStyleSheet("font-weight: bold; color: #34495E; font-size: 14px;")
+        output_label = QLabel("Panel")
+        output_label.setStyleSheet("font-weight: 600;")
         output_layout.addWidget(output_label)
         
         # Widget con pestañas para salida y terminal
         self.output_tabs = QTabWidget()
-        self.output_tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 2px solid #BDC3C7;
-                border-radius: 5px;
-                background-color: #FAFAFA;
-            }
-            QTabBar::tab {
-                background-color: #ECF0F1;
-                color: #2C3E50;
-                padding: 8px 16px;
-                margin-right: 2px;
-                border-top-left-radius: 5px;
-                border-top-right-radius: 5px;
-                border: 1px solid #BDC3C7;
-            }
-            QTabBar::tab:selected {
-                background-color: #3498DB;
-                color: white;
-                border-bottom: none;
-            }
-            QTabBar::tab:hover {
-                background-color: #D5DBDB;
-            }
-        """)
         
         # Pestaña de salida/características
         self.output_text = QTextEdit()
         self.output_text.setFont(QFont("Consolas", 11))
         self.output_text.setReadOnly(True)
-        self.output_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #FAFAFA;
-                color: #2C3E50;
-                border: none;
-                padding: 10px;
-            }
-        """)
         
         # Contenido inicial con características del programa
-        initial_content = """🌟 CARACTERÍSTICAS PRINCIPALES DEL EDITOR
+        initial_content = """🌟 GUÍA RÁPIDA (Getting Started)
 
-📝 EDITOR DE CÓDIGO
-• Pestañas múltiples: Trabaja con varios archivos simultáneamente
-• Resaltado de sintaxis: Código Python con colores para mejor legibilidad
-• Numeración de líneas: Referencia visual para debugging
-• Formateo automático: Código limpio según estándares PEP 8
+🧭 INTERFAZ (estilo VS Code/Cursor)
+• Activity Bar (izquierda): Explorer / Search / Terminal / Settings
+• Sidebar: pestañas Explorer + Search
+• Panel inferior: Terminal + Problems + esta ayuda
 
-💻 TERMINAL INTEGRADO
-• Python interactivo: Ejecuta código línea por línea
-• Bash/Shell: Comandos del sistema operativo
-• Input() interactivo: Soporte completo para entrada de usuario
-• Aplicaciones gráficas: Ejecuta programas con interfaz gráfica
+⌨️ ATAJOS IMPORTANTES
+• Ctrl+P → Quick Open (archivos recientes)
+• Ctrl+Shift+P → Command Palette (comandos)
+• Ctrl+Enter → Ejecutar código en Terminal
+• Ctrl+` → Alternar a la pestaña Terminal
+• Ctrl+Alt+C → Modo Café (pausa: bloquea hasta mover ratón o pulsar tecla)
 
-🔍 BÚSQUEDA AVANZADA
-• Búsqueda simple: Encuentra texto en el archivo actual
-• Buscar y reemplazar: Modifica texto de forma masiva
-• Múltiples archivos: Busca en todo el proyecto
+🔍 SEARCH (sidebar)
+• Resultados clicables + preview del match
+• Flags: Aa (case), Ab (palabra), .* (regex), “En archivos”
+• Replace: Reemplazar / Reemplazar todo
 
-⚙️ PERSONALIZACIÓN
-• Temas y colores: Personaliza la apariencia
-• Fuentes: Cambia tipografía y tamaños
-• Formatter: Configura herramientas de formateo
+🧪 DEBUGGER / APRENDIZAJE
+• F4 → Tutoriales
+• F5 → Debugger visual (Paso / Ejecutar hasta breakpoint / Detener)
+• F6 → Gestor de paquetes
+• F7 → Análisis de código
 
-⌨️ ATAJOS DE TECLADO PRINCIPALES
-
-🚀 EJECUCIÓN:
-Ctrl + Enter → Ejecutar código en terminal
-Ctrl + L → Limpiar salida del terminal
-
-📁 ARCHIVOS:
-Ctrl + O → Abrir archivo
-Ctrl + S → Guardar archivo
-Ctrl + T → Nueva pestaña
-Ctrl + W → Cerrar pestaña
-
-🔍 BÚSQUEDA:
-Ctrl + F → Buscar en archivo actual
-Ctrl + H → Buscar y reemplazar
-Ctrl + Shift + F → Buscar en múltiples archivos
-
-🔧 HERRAMIENTAS:
-Ctrl + Alt + F → Formatear código
-Ctrl + Alt + T → Abrir terminal del sistema
-F2 → Mostrar documentación completa
-F3 → Mostrar/ocultar explorador de archivos
-
-💡 Consejo: Presiona F2 para acceder a la documentación completa con guías detalladas y tutoriales paso a paso.
-
-────────────────────────────────────────────────────
-La salida de ejecución de código aparecerá aquí."""
+💡 Tip: revisa también la documentación completa (F2) y el README del proyecto.
+"""
         
         self.output_text.setText(initial_content)
         self.output_tabs.addTab(self.output_text, "🌟 Características")
         
         # Pestaña del terminal integrado REAL
         self.integrated_terminal = IntegratedTerminalNew()
-        self.output_tabs.addTab(self.integrated_terminal, "💻 Terminal")
+        self.output_tabs.addTab(self.integrated_terminal, "Terminal")
+        try:
+            self.app.aboutToQuit.connect(self._cleanup_resources)
+        except Exception:
+            pass
+
+        # Pestaña de Problems
+        self.problems_panel = ProblemsPanel(self)
+        self.output_tabs.addTab(self.problems_panel, "Problems")
         
         output_layout.addWidget(self.output_tabs)
         splitter.addWidget(output_frame)
         
         # Configurar proporciones del splitter
         splitter.setSizes([400, 200])
+
+        # Conectar status bar a cambios de cursor/pestaña
+        try:
+            if self.input_text:
+                self.input_text.cursorPositionChanged.connect(self._update_status_position)
+                if hasattr(self.input_text, "syntaxErrorsChanged"):
+                    self.input_text.syntaxErrorsChanged.connect(self.problems_panel.set_errors)
+            if hasattr(self, "tabbed_editor"):
+                self.tabbed_editor.currentChanged.connect(self._on_tab_changed_status)
+            self._update_status_position()
+        except Exception:
+            pass
+
+        # Estado inicial activity bar
+        try:
+            self._set_activity_active(self.act_explorer)
+        except Exception:
+            pass
+
+        # Overlay Modo Café (bloqueo)
+        self._coffee_active = False
+        self._coffee_prev_settings = None
+        self._coffee_ignore_next_event = False
+        self._build_coffee_overlay()
+
+    def _set_activity_active(self, btn: QToolButton):
+        """Marca un botón del Activity Bar como activo visualmente."""
+        for b in (getattr(self, "act_explorer", None), getattr(self, "act_search", None), getattr(self, "act_terminal", None), getattr(self, "act_settings", None)):
+            if b is None:
+                continue
+            b.setProperty("active", "true" if b is btn else "false")
+            b.style().unpolish(b)
+            b.style().polish(b)
+
+    def _set_sidebar_tab(self, idx: int):
+        """Muestra la sidebar y selecciona la pestaña indicada."""
+        try:
+            if hasattr(self, "explorer_container"):
+                self.explorer_container.show()
+            if hasattr(self, "sidebar_tabs"):
+                self.sidebar_tabs.setCurrentIndex(idx)
+            if idx == 0:
+                self._set_activity_active(self.act_explorer)
+            else:
+                self._set_activity_active(self.act_search)
+        except Exception:
+            pass
+
+    def _build_coffee_overlay(self):
+        """Crea el overlay que bloquea la UI."""
+        try:
+            self.coffee_overlay = QWidget(self._central_widget)
+            self.coffee_overlay.setObjectName("CoffeeOverlay")
+            self.coffee_overlay.setVisible(False)
+            self.coffee_overlay.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            self.coffee_overlay.setStyleSheet("""
+                QWidget#CoffeeOverlay {
+                    background-color: rgba(0, 0, 0, 190);
+                }
+                QLabel#CoffeeTitle { color: #F3E7DA; font-size: 22px; font-weight: 600; }
+                QLabel#CoffeeHint { color: #CDB8A6; font-size: 13px; }
+            """)
+
+            lay = QVBoxLayout(self.coffee_overlay)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addStretch()
+
+            center = QWidget()
+            c_lay = QVBoxLayout(center)
+            c_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            c_lay.setSpacing(12)
+
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            coffee_svg = os.path.join(os.path.dirname(base_dir), "assets", "coffee", "coffee.svg")
+            img = QLabel()
+            pix = _render_svg_pixmap(coffee_svg, 180)
+            img.setPixmap(pix)
+            img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            c_lay.addWidget(img)
+
+            title = QLabel("Modo Café")
+            title.setObjectName("CoffeeTitle")
+            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            c_lay.addWidget(title)
+
+            hint_text = ""
+            try:
+                hint_text = self._get_current_settings().get("coffee_message", "")
+            except Exception:
+                hint_text = ""
+            if not hint_text:
+                hint_text = "Mueve el ratón o pulsa cualquier tecla para volver."
+            hint = QLabel(hint_text)
+            hint.setObjectName("CoffeeHint")
+            hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            c_lay.addWidget(hint)
+
+            lay.addWidget(center)
+            lay.addStretch()
+
+            # Ajustar tamaño inicial
+            self.coffee_overlay.setGeometry(self._central_widget.rect())
+
+            # Capturar eventos globales para salir
+            try:
+                self._coffee_filter = _CoffeeEventFilter(self)
+                self.app.installEventFilter(self._coffee_filter)
+            except Exception:
+                self._coffee_filter = None
+
+            # Hook de resize para mantener cobertura
+            old_resize = self.window.resizeEvent
+            def _resize(ev):
+                try:
+                    if hasattr(self, "coffee_overlay") and self.coffee_overlay:
+                        self.coffee_overlay.setGeometry(self._central_widget.rect())
+                except Exception:
+                    pass
+                return old_resize(ev)
+            self.window.resizeEvent = _resize
+        except Exception as e:
+            print("Coffee overlay build error:", e)
+
+    def toggle_coffee_mode(self):
+        if self._coffee_active:
+            self.disable_coffee_mode()
+        else:
+            self.enable_coffee_mode()
+
+    def enable_coffee_mode(self):
+        """Activa modo café: aplica tema cálido y bloquea UI hasta input."""
+        try:
+            if self._coffee_active:
+                return
+            self._coffee_active = True
+            self._coffee_ignore_next_event = True
+
+            # Guardar settings actuales para restaurar
+            try:
+                self._coffee_prev_settings = self._get_current_settings()
+            except Exception:
+                self._coffee_prev_settings = None
+
+            # Aplicar tema Café sin persistir (preview)
+            try:
+                if "Café" in AppConfig.THEMES:
+                    s = AppConfig.THEMES["Café"].copy()
+                    s["current_theme"] = "Café"
+                    self.apply_preferences(s, preview=True)
+                    if hasattr(self, "_status_theme"):
+                        self._status_theme.setText("Café")
+            except Exception:
+                pass
+
+            self.coffee_overlay.setGeometry(self._central_widget.rect())
+            self.coffee_overlay.show()
+            self.coffee_overlay.raise_()
+            self.coffee_overlay.setFocus()
+
+            # Actualizar mensaje desde preferencias al entrar
+            try:
+                msg = self._get_current_settings().get("coffee_message", "")
+                if msg and hasattr(self, "coffee_overlay"):
+                    lbl = self.coffee_overlay.findChild(QLabel, "CoffeeHint")
+                    if lbl:
+                        lbl.setText(msg)
+            except Exception:
+                pass
+
+            # Después de un instante, ya permitimos salir por input
+            QTimer.singleShot(150, lambda: setattr(self, "_coffee_ignore_next_event", False))
+        except Exception as e:
+            print("enable coffee failed:", e)
+
+    def disable_coffee_mode(self):
+        """Desactiva modo café y restaura tema anterior."""
+        try:
+            if not self._coffee_active:
+                return
+            self._coffee_active = False
+            if hasattr(self, "coffee_overlay"):
+                self.coffee_overlay.hide()
+
+            # Restaurar settings previos sin persistir
+            if self._coffee_prev_settings:
+                try:
+                    self.apply_preferences(self._coffee_prev_settings, preview=True)
+                    if hasattr(self, "_status_theme"):
+                        self._status_theme.setText(self._coffee_prev_settings.get("current_theme", AppConfig.DEFAULT_THEME))
+                except Exception:
+                    pass
+            self._coffee_prev_settings = None
+        except Exception as e:
+            print("disable coffee failed:", e)
+
+    def _on_tab_changed_status(self, _index):
+        """Reengancha señales al cambiar de pestaña para actualizar status bar."""
+        try:
+            self.input_text = self.tabbed_editor.get_current_editor()
+            if self.input_text:
+                self.input_text.cursorPositionChanged.connect(self._update_status_position)
+                if hasattr(self.input_text, "syntaxErrorsChanged"):
+                    self.input_text.syntaxErrorsChanged.connect(self.problems_panel.set_errors)
+            self._update_status_position()
+            # limpiar highlights de búsqueda al cambiar de pestaña
+            self.set_search_highlights([])
+        except Exception:
+            pass
+
+    def _update_status_position(self):
+        """Actualiza Ln/Col en la status bar."""
+        try:
+            if not hasattr(self, "_status_pos") or not self.input_text:
+                return
+            cur = self.input_text.textCursor()
+            ln = cur.blockNumber() + 1
+            col = cur.positionInBlock() + 1
+            self._status_pos.setText(f"Ln {ln}, Col {col}")
+        except Exception:
+            pass
+
+    def jump_to_line_col(self, line: int, col: int = 1):
+        """Salta a una línea/columna en el editor actual (1-indexed)."""
+        try:
+            editor = self.tabbed_editor.get_current_editor() if hasattr(self, "tabbed_editor") else None
+            if not editor:
+                return
+            line = max(1, int(line))
+            col = max(1, int(col))
+            block = editor.document().findBlockByNumber(line - 1)
+            if not block.isValid():
+                return
+            pos = block.position() + (col - 1)
+            cur = editor.textCursor()
+            cur.setPosition(pos)
+            editor.setTextCursor(cur)
+            editor.setFocus()
+        except Exception:
+            pass
+
+    def select_range_absolute(self, start: int, end: int, focus: bool = True):
+        """Selecciona un rango (posiciones absolutas en el documento actual)."""
+        try:
+            editor = self.tabbed_editor.get_current_editor() if hasattr(self, "tabbed_editor") else None
+            if not editor:
+                return
+            start = max(0, int(start))
+            end = max(start, int(end))
+            cur = editor.textCursor()
+            cur.setPosition(start)
+            cur.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            editor.setTextCursor(cur)
+            try:
+                editor.centerCursor()
+            except Exception:
+                pass
+            if focus:
+                editor.setFocus()
+        except Exception:
+            pass
+
+    def set_search_highlights(self, ranges):
+        """Resalta todos los matches de búsqueda (estilo VS Code) en el editor actual."""
+        try:
+            editor = self.tabbed_editor.get_current_editor() if hasattr(self, "tabbed_editor") else None
+            if not editor or not hasattr(editor, "setExtraSelections"):
+                return
+
+            selections = []
+            if ranges:
+                fmt = QTextCharFormat()
+                fmt.setBackground(QColor(38, 79, 120, 120))  # similar a selection-background pero suave
+                fmt.setForeground(QColor("#D4D4D4"))
+                for start, end in ranges:
+                    try:
+                        start = int(start)
+                        end = int(end)
+                        if end <= start:
+                            continue
+                        cur = editor.textCursor()
+                        cur.setPosition(start)
+                        cur.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                        sel = QTextEdit.ExtraSelection()
+                        sel.cursor = cur
+                        sel.format = fmt
+                        selections.append(sel)
+                    except Exception:
+                        continue
+
+            editor.setExtraSelections(selections)
+        except Exception:
+            pass
     
     def _handle_close_event(self, event, force_quit=False):
         """Maneja el evento de cierre de ventana"""
@@ -4664,15 +5622,7 @@ La salida de ejecución de código aparecerá aquí."""
             if hasattr(self, 'session_manager'):
                 self.session_manager.save_session()
             
-            # Limpiar terminal integrado y procesos
-            if hasattr(self, 'integrated_terminal'):
-                try:
-                    # Terminar procesos activos del terminal
-                    if hasattr(self.integrated_terminal, 'current_process') and self.integrated_terminal.current_process:
-                        self.integrated_terminal.current_process.kill()
-                        self.integrated_terminal.current_process.waitForFinished(1000)
-                except:
-                    pass
+            self._shutdown_integrated_terminal()
             
             # Ocultar el icono de la bandeja si existe
             if self.tray_icon:
@@ -4704,14 +5654,26 @@ La salida de ejecución de código aparecerá aquí."""
             if self.app:
                 self.app.quit()
     
+    def _shutdown_integrated_terminal(self):
+        """Detiene el shell del terminal integrado antes de cerrar la app."""
+        terminal = getattr(self, 'integrated_terminal', None)
+        if not terminal:
+            return
+        try:
+            if hasattr(terminal, 'shutdown_terminal'):
+                terminal.shutdown_terminal()
+            elif getattr(terminal, 'process', None):
+                proc = terminal.process
+                if proc.state() == QProcess.ProcessState.Running:
+                    proc.kill()
+                    proc.waitForFinished(2000)
+        except Exception:
+            pass
+
     def _cleanup_resources(self):
         """Limpia recursos antes del cierre"""
         try:
-            # Limpiar terminal integrado
-            if hasattr(self, 'integrated_terminal'):
-                if hasattr(self.integrated_terminal, 'current_process') and self.integrated_terminal.current_process:
-                    self.integrated_terminal.current_process.kill()
-                    self.integrated_terminal.current_process.waitForFinished(1000)
+            self._shutdown_integrated_terminal()
             
             # Limpiar hilos activos (evitando daemon threads que causan el error)
             import threading
@@ -4885,6 +5847,42 @@ La salida de ejecución de código aparecerá aquí."""
         
         # Separador
         help_menu.addSeparator()
+        
+        # Nuevas funciones educativas
+        if EDUCATIONAL_FEATURES_AVAILABLE:
+            educational_menu = menubar.addMenu("🎓 Aprendizaje")
+            
+            # Tutorials
+            tutorials_action = QAction("📚 Tutoriales Interactivos", self.window)
+            tutorials_action.setShortcut("F4")
+            tutorials_action.setStatusTip("Acceder a tutoriales paso a paso para aprender Python")
+            tutorials_action.triggered.connect(self.show_tutorials_dialog)
+            educational_menu.addAction(tutorials_action)
+            
+            # Debugger
+            debugger_action = QAction("🐛 Debugger Visual", self.window)
+            debugger_action.setShortcut("F5")
+            debugger_action.setStatusTip("Ejecutar código paso a paso para debugging")
+            debugger_action.triggered.connect(self.show_debugger_dialog)
+            educational_menu.addAction(debugger_action)
+            
+            # Package Manager
+            packages_action = QAction("📦 Gestor de Paquetes", self.window)
+            packages_action.setShortcut("F6")
+            packages_action.setStatusTip("Instalar y gestionar paquetes Python de forma visual")
+            packages_action.triggered.connect(self.show_package_manager_dialog)
+            educational_menu.addAction(packages_action)
+            
+            # Code Analysis
+            analysis_action = QAction("🔍 Análisis de Código", self.window)
+            analysis_action.setShortcut("F7")
+            analysis_action.setStatusTip("Análisis en tiempo real del código Python")
+            analysis_action.triggered.connect(self.toggle_code_analysis)
+            analysis_action.setCheckable(True)
+            educational_menu.addAction(analysis_action)
+            
+            # Separador
+            help_menu.addSeparator()
         
         # Acción About
         about_action = QAction("ℹ️ About", self.window)
@@ -5251,7 +6249,8 @@ La salida de ejecución de código aparecerá aquí."""
             'output_font_family': 'Consolas',
             'output_font_size': 11,
             'output_bg_color': '#FAFAFA',
-            'output_text_color': '#2C3E50'
+            'output_text_color': '#2C3E50',
+            'coffee_message': "Mueve el ratón o pulsa cualquier tecla para volver."
         }
         
         # Cargar valores guardados o usar defaults
@@ -5591,9 +6590,19 @@ La salida de ejecución de código aparecerá aquí."""
                         self.output_tabs.setCurrentIndex(i)
                         break
             
-            # Ejecutar código en el terminal integrado
+            # Ejecutar código en el terminal integrado en modo salida limpia
             if hasattr(self, 'integrated_terminal'):
-                self.integrated_terminal.execute_code_from_editor(code)
+                ok = False
+                try:
+                    ok = self.integrated_terminal.execute_code_from_editor(code)
+                except Exception as inner_e:
+                    print(f"Fallo execute_code_from_editor: {inner_e}, usando send_to_terminal de respaldo")
+                    # Respaldo: enviar al REPL (mostrará prompts)
+                    if hasattr(self.integrated_terminal, 'send_to_terminal'):
+                        self.integrated_terminal.send_to_terminal(code)
+                        ok = True
+                if not ok:
+                    self.show_message("Error", "❌ No se pudo ejecutar el código", "error")
             else:
                 self.show_message("Error", "❌ Terminal no disponible", "error")
                 
@@ -5633,10 +6642,20 @@ La salida de ejecución de código aparecerá aquí."""
         # Ctrl+` para alternar terminal
         terminal_shortcut = QShortcut(QKeySequence("Ctrl+`"), self.window)
         terminal_shortcut.activated.connect(self.toggle_terminal)
+
+        # Command Palette (estilo Cursor/VS Code)
+        palette_shortcut = QShortcut(QKeySequence("Ctrl+Shift+P"), self.window)
+        palette_shortcut.activated.connect(self.show_command_palette)
+        quick_open_shortcut = QShortcut(QKeySequence("Ctrl+P"), self.window)
+        quick_open_shortcut.activated.connect(self.show_command_palette)
         
         # Ctrl+Alt+T para abrir terminal del sistema
         system_terminal_shortcut = QShortcut(QKeySequence("Ctrl+Alt+T"), self.window)
         system_terminal_shortcut.activated.connect(self.open_system_terminal)
+
+        # Modo Café (pausa/bloqueo)
+        coffee_shortcut = QShortcut(QKeySequence("Ctrl+Alt+C"), self.window)
+        coffee_shortcut.activated.connect(self.toggle_coffee_mode)
         
         # F3 para buscar siguiente (cuando hay diálogo de búsqueda abierto)
         find_next_shortcut = QShortcut(QKeySequence("F3"), self.window)
@@ -5660,6 +6679,52 @@ La salida de ejecución de código aparecerá aquí."""
                     self.integrated_terminal.command_input.setFocus()
         except Exception as e:
             print(f"Error alternando terminal: {e}")
+
+    def show_command_palette(self):
+        """Muestra una paleta de comandos (comandos + archivos recientes)."""
+        try:
+            dlg = CommandPaletteDialog(self.window)
+
+            items = []
+            # Comandos principales
+            items.extend([
+                {"kind": "command", "label": "Abrir archivo…", "detail": "Ctrl+O", "callback": lambda: self.load_file_content(self.open_file_dialog())},
+                {"kind": "command", "label": "Guardar", "detail": "Ctrl+S", "callback": lambda: self.save_file_content()},
+                {"kind": "command", "label": "Guardar como…", "detail": "Ctrl+Shift+S", "callback": lambda: self.tabbed_editor.save_current_tab() if hasattr(self, "tabbed_editor") else None},
+                {"kind": "command", "label": "Buscar…", "detail": "Ctrl+F", "callback": lambda: self.show_find_dialog()},
+                {"kind": "command", "label": "Buscar y reemplazar…", "detail": "Ctrl+H", "callback": lambda: self.show_find_replace_dialog()},
+                {"kind": "command", "label": "Buscar en archivos…", "detail": "Ctrl+Shift+F", "callback": lambda: self.show_multi_file_search_dialog()},
+                {"kind": "command", "label": "Preferencias…", "detail": "Ctrl+,", "callback": lambda: self.show_preferences_dialog()},
+                {"kind": "command", "label": "Toggle explorador", "detail": "F3", "callback": lambda: self.toggle_file_explorer()},
+                {"kind": "command", "label": "Toggle terminal", "detail": "Ctrl+`", "callback": lambda: self.toggle_terminal()},
+            ])
+
+            # Archivos recientes (Quick Open)
+            try:
+                if hasattr(self, "session_manager") and self.session_manager:
+                    recent = self.session_manager.get_recent_files()
+                    for info in recent:
+                        path = info.get("file_path") or ""
+                        if not path:
+                            continue
+                        label = os.path.basename(path)
+                        items.append({
+                            "kind": "file",
+                            "label": label,
+                            "detail": path,
+                            "callback": lambda p=path: self.tabbed_editor.load_file_in_tab(p) if hasattr(self, "tabbed_editor") else None
+                        })
+            except Exception:
+                pass
+
+            dlg.set_items(items)
+            dlg.query.setFocus()
+            dlg.exec()
+        except Exception as e:
+            try:
+                self.show_message("Error", f"❌ No se pudo abrir la Command Palette: {e}", "error")
+            except Exception:
+                print("Command palette error:", e)
     
     def _save_session_manual(self):
         """Guarda la sesión manualmente desde el menú"""
@@ -5876,6 +6941,8 @@ La salida de ejecución de código aparecerá aquí."""
     def destroy(self):
         """Cierra la ventana y la aplicación de forma segura"""
         try:
+            self._shutdown_integrated_terminal()
+
             # Guardar configuraciones antes de cerrar
             if hasattr(self, 'input_text') and hasattr(self.input_text, 'preferences_settings'):
                 self._save_settings(self.input_text.preferences_settings)
@@ -5989,13 +7056,24 @@ La salida de ejecución de código aparecerá aquí."""
         import subprocess
         import os
         import shutil
-        
+        import shlex
+
+        def _spawn_terminal(argv):
+            subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
         try:
             system = platform.system().lower()
             current_dir = os.getcwd()
             terminal_opened = False
             terminal_used = None
-            
+            terminals_config = []
+
             if system == "windows":
                 # Windows: Abrir CMD o PowerShell
                 try:
@@ -6034,6 +7112,7 @@ La salida de ejecución de código aparecerá aquí."""
                     pass
                 
             else:  # Linux y otros sistemas Unix
+                shell_cmd = f'cd {shlex.quote(current_dir)}; exec bash -i'
                 # Lista de terminales ordenada por preferencia
                 terminals_config = [
                     ('gnome-terminal', ['--working-directory', current_dir]),
@@ -6044,39 +7123,32 @@ La salida de ejecución de código aparecerá aquí."""
                     ('alacritty', ['--working-directory', current_dir]),
                     ('kitty', ['--directory', current_dir]),
                     ('lxterminal', ['--working-directory', current_dir]),
-                    ('xterm', ['-e', f'cd "{current_dir}"; exec bash'])
+                    ('xterm', ['-e', 'bash', '-lc', shell_cmd]),
                 ]
-                
-                # Intentar cada terminal disponible
+
                 for terminal, args in terminals_config:
-                    if shutil.which(terminal):  # Verificar si el terminal existe
-                        try:
-                            # Para gnome-terminal, usar método especial debido a problemas con snaps
-                            if terminal == 'gnome-terminal':
-                                process = subprocess.Popen([terminal] + args, 
-                                                         stderr=subprocess.DEVNULL,
-                                                         stdout=subprocess.DEVNULL)
-                                # Esperar un momento para ver si el proceso se inicia
-                                import time
-                                time.sleep(0.5)
-                                if process.poll() is None:  # Proceso aún ejecutándose
-                                    terminal_opened = True
-                                    terminal_used = "GNOME Terminal"
-                                    break
-                            else:
-                                subprocess.Popen([terminal] + args)
-                                terminal_opened = True
-                                terminal_used = terminal.replace('-', ' ').title()
-                                break
-                                
-                        except (FileNotFoundError, subprocess.SubprocessError) as e:
-                            print(f"Error con {terminal}: {e}")  # Debug
-                            continue
-                
-                # Fallback final: intentar con x-terminal-emulator
+                    if not shutil.which(terminal):
+                        continue
+                    try:
+                        _spawn_terminal([terminal, *args])
+                        terminal_opened = True
+                        terminal_used = (
+                            "GNOME Terminal" if terminal == "gnome-terminal"
+                            else terminal.replace('-', ' ').title()
+                        )
+                        break
+                    except (FileNotFoundError, subprocess.SubprocessError) as e:
+                        print(f"Error con {terminal}: {e}")
+                        continue
+
+                # Fallback: x-terminal-emulator (suele ser gnome-terminal.wrapper)
                 if not terminal_opened and shutil.which('x-terminal-emulator'):
                     try:
-                        subprocess.Popen(['x-terminal-emulator', '-e', f'cd "{current_dir}"; exec bash'])
+                        emu_path = os.path.realpath(shutil.which('x-terminal-emulator'))
+                        if 'gnome-terminal' in os.path.basename(emu_path):
+                            _spawn_terminal(['gnome-terminal', '--working-directory', current_dir])
+                        else:
+                            _spawn_terminal(['x-terminal-emulator', '-e', 'bash', '-lc', shell_cmd])
                         terminal_opened = True
                         terminal_used = "X Terminal Emulator"
                     except (FileNotFoundError, subprocess.SubprocessError):
@@ -6113,3 +7185,927 @@ La salida de ejecución de código aparecerá aquí."""
             self.show_message("Error", 
                             f"❌ Error abriendo terminal del sistema:\n{str(e)}", 
                             "error")
+
+    # ===========================================
+    # NUEVAS FUNCIONALIDADES EDUCATIVAS
+    # ===========================================
+    
+    def show_tutorials_dialog(self):
+        """Muestra el diálogo de tutoriales interactivos"""
+        if not EDUCATIONAL_FEATURES_AVAILABLE:
+            self.show_message("Funcionalidad no disponible", 
+                            "Los tutoriales requieren módulos adicionales que no están instalados.", 
+                            "warning")
+            return
+        
+        try:
+            from analyzers.tutorial_system import get_tutorial_manager
+            self.tutorial_manager = get_tutorial_manager()
+            
+            # Crear diálogo de tutoriales
+            dialog = TutorialDialog(self.window, self.tutorial_manager)
+            dialog.exec()
+            
+        except Exception as e:
+            self.show_message("Error", f"Error iniciando tutoriales: {str(e)}", "error")
+    
+    def show_debugger_dialog(self):
+        """Muestra el diálogo del debugger visual"""
+        if not EDUCATIONAL_FEATURES_AVAILABLE:
+            self.show_message("Funcionalidad no disponible", 
+                            "El debugger requiere módulos adicionales que no están instalados.", 
+                            "warning")
+            return
+        
+        try:
+            from analyzers.visual_debugger import get_debugger_manager
+            current_code = self.get_input_code()
+            
+            if not current_code.strip():
+                self.show_message("Código requerido", 
+                                "Necesitas escribir algo de código Python para usar el debugger.", 
+                                "info")
+                return
+            
+            # Crear diálogo de debugger
+            dialog = DebuggerDialog(self.window, current_code)
+            dialog.exec()
+            
+        except Exception as e:
+            self.show_message("Error", f"Error iniciando debugger: {str(e)}", "error")
+    
+    def show_package_manager_dialog(self):
+        """Muestra el diálogo del gestor de paquetes"""
+        if not EDUCATIONAL_FEATURES_AVAILABLE:
+            self.show_message("Funcionalidad no disponible", 
+                            "El gestor de paquetes requiere módulos adicionales que no están instalados.", 
+                            "warning")
+            return
+        
+        try:
+            from analyzers.package_manager import get_package_manager
+            
+            # Crear diálogo del gestor de paquetes
+            dialog = PackageManagerDialog(self.window)
+            dialog.exec()
+            
+        except Exception as e:
+            self.show_message("Error", f"Error iniciando gestor de paquetes: {str(e)}", "error")
+    
+    def toggle_code_analysis(self):
+        """Activa/desactiva el análisis de código en tiempo real"""
+        if not EDUCATIONAL_FEATURES_AVAILABLE:
+            self.show_message("Funcionalidad no disponible", 
+                            "El análisis de código requiere módulos adicionales que no están instalados.", 
+                            "warning")
+            return
+        
+        try:
+            if not hasattr(self, 'code_analysis_enabled'):
+                self.code_analysis_enabled = False
+                self.analysis_timer = QTimer()
+                self.analysis_timer.timeout.connect(self._analyze_current_code)
+                self.analysis_timer.setSingleShot(True)
+            
+            self.code_analysis_enabled = not self.code_analysis_enabled
+            
+            if self.code_analysis_enabled:
+                self.show_message("Análisis de Código", 
+                                "🔍 Análisis de código activado. Los errores aparecerán subrayados en el editor.", 
+                                "info")
+                self._setup_code_analysis()
+            else:
+                self.show_message("Análisis de Código", 
+                                "⏹️ Análisis de código desactivado.", 
+                                "info")
+                self._stop_code_analysis()
+                
+        except Exception as e:
+            self.show_message("Error", f"Error en análisis de código: {str(e)}", "error")
+    
+    def _setup_code_analysis(self):
+        """Configura el análisis de código en tiempo real"""
+        if hasattr(self, 'tabbed_editor'):
+            current_editor = self.tabbed_editor.get_current_editor()
+            if current_editor:
+                current_editor.textChanged.connect(self._on_text_changed_analysis)
+                self._analyze_current_code()
+    
+    def _stop_code_analysis(self):
+        """Detiene el análisis de código"""
+        if hasattr(self, 'analysis_timer'):
+            self.analysis_timer.stop()
+        
+        # Limpiar highlights del análisis
+        self._clear_analysis_highlights()
+        
+        if hasattr(self, 'tabbed_editor'):
+            current_editor = self.tabbed_editor.get_current_editor()
+            if current_editor:
+                try:
+                    current_editor.textChanged.disconnect(self._on_text_changed_analysis)
+                except:
+                    pass
+    
+    def _on_text_changed_analysis(self):
+        """Se ejecuta cuando cambia el texto del editor"""
+        if hasattr(self, 'analysis_timer') and self.code_analysis_enabled:
+            self.analysis_timer.stop()
+            self.analysis_timer.start(1000)  # Analizar después de 1 segundo sin cambios
+    
+    def _analyze_current_code(self):
+        """Analiza el código actual y muestra resultados directamente en el editor"""
+        try:
+            from analyzers.code_analyzer import analyze_code
+            
+            current_code = self.get_input_code()
+            if not current_code.strip():
+                self._clear_analysis_highlights()
+                return
+            
+            # Analizar código
+            issues = analyze_code(current_code)
+            
+            # Mostrar errores directamente en el editor con subrayado
+            self._highlight_code_issues(issues)
+            
+            # No mostrar ventanas flotantes, solo el subrayado visual
+            
+        except Exception as e:
+            print(f"Error en análisis: {e}")
+    
+    def _highlight_code_issues(self, issues):
+        """Subraya los problemas del código directamente en el editor"""
+        try:
+            if not hasattr(self, 'tabbed_editor'):
+                return
+                
+            current_editor = self.tabbed_editor.get_current_editor()
+            if not current_editor:
+                return
+            
+            # Limpiar highlights anteriores
+            self._clear_analysis_highlights()
+            
+            # Crear formato para subrayado de errores
+            error_format = QTextCharFormat()
+            error_format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
+            error_format.setUnderlineColor(QColor("#FF4444"))
+            
+            warning_format = QTextCharFormat()
+            warning_format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
+            warning_format.setUnderlineColor(QColor("#FFA500"))
+            
+            suggestion_format = QTextCharFormat()
+            suggestion_format.setUnderlineStyle(QTextCharFormat.DotLine)
+            suggestion_format.setUnderlineColor(QColor("#4488FF"))
+            
+            # Obtener el documento del editor
+            document = current_editor.document()
+            
+            # Aplicar formato a cada issue
+            for issue in issues:
+                line_num = issue.get('line', 1) - 1  # QTextEdit usa índices base 0
+                line_text = issue.get('line_text', '')
+                issue_type = issue.get('type', 'error')
+                
+                # Obtener el bloque de texto correspondiente a la línea
+                block = document.findBlockByLineNumber(line_num)
+                if not block.isValid():
+                    continue
+                
+                # Crear cursor para la línea completa
+                cursor = QTextCursor(block)
+                cursor.select(QTextCursor.LineUnderCursor)
+                
+                # Seleccionar formato según el tipo
+                if issue_type == 'error':
+                    format_to_use = error_format
+                elif issue_type == 'warning':
+                    format_to_use = warning_format
+                else:
+                    format_to_use = suggestion_format
+                
+                # Aplicar el formato
+                cursor.mergeCharFormat(format_to_use)
+                
+                # Guardar información del issue para tooltips
+                if not hasattr(self, 'code_issues'):
+                    self.code_issues = {}
+                self.code_issues[line_num] = issue
+                
+        except Exception as e:
+            print(f"Error aplicando highlights: {e}")
+    
+    def _clear_analysis_highlights(self):
+        """Limpia todos los highlights de análisis anteriores"""
+        try:
+            if not hasattr(self, 'tabbed_editor'):
+                return
+                
+            current_editor = self.tabbed_editor.get_current_editor()
+            if not current_editor:
+                return
+            
+            # Limpiar todos los formatos de análisis
+            cursor = current_editor.textCursor()
+            cursor.select(QTextCursor.Document)
+            
+            # Crear formato limpio
+            clean_format = QTextCharFormat()
+            cursor.setCharFormat(clean_format)
+            
+            # Limpiar issues guardados
+            if hasattr(self, 'code_issues'):
+                self.code_issues.clear()
+                
+        except Exception as e:
+            print(f"Error limpiando highlights: {e}")
+    
+# ===========================================
+# DIÁLOGOS PARA FUNCIONALIDADES EDUCATIVAS
+# ===========================================
+
+class TutorialDialog(QDialog):
+    """Diálogo para tutoriales interactivos"""
+    
+    def __init__(self, parent=None, tutorial_manager=None):
+        super().__init__(parent)
+        self.tutorial_manager = tutorial_manager
+        self.setWindowTitle("🎓 Tutoriales Interactivos - Aprende Python")
+        self.setGeometry(200, 100, 800, 600)
+        self.setModal(True)
+        
+        # Aplicar estilo de fondo negro y texto blanco
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1E1E1E;
+                color: #FFFFFF;
+            }
+            QLabel {
+                color: #FFFFFF;
+                background-color: transparent;
+            }
+            QListWidget {
+                background-color: #2D2D2D;
+                color: #FFFFFF;
+                border: 1px solid #404040;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QListWidget::item {
+                background-color: #3C3C3C;
+                border: 1px solid #555555;
+                border-radius: 3px;
+                padding: 8px;
+                margin: 2px;
+            }
+            QListWidget::item:selected {
+                background-color: #0078D4;
+                border: 1px solid #106EBE;
+            }
+            QListWidget::item:hover {
+                background-color: #4A4A4A;
+            }
+        """)
+        
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Título
+        title = QLabel("🎓 Tutoriales Interactivos de Python")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF; margin: 10px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Lista de tutoriales
+        self.tutorials_list = QListWidget()
+        tutorials = self.tutorial_manager.get_tutorial_list() if self.tutorial_manager else []
+        
+        for tutorial in tutorials:
+            item_text = f"📚 {tutorial['title']}\n💡 {tutorial['description']}\n🔢 {tutorial['steps_count']} pasos | 📊 {tutorial['difficulty']}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, tutorial['id'])
+            self.tutorials_list.addItem(item)
+        
+        layout.addWidget(self.tutorials_list)
+        
+        # Botones
+        button_layout = QHBoxLayout()
+        
+        self.start_button = QPushButton("🚀 Comenzar Tutorial")
+        self.start_button.setStyleSheet("""
+            QPushButton {
+                background-color: #27AE60;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #2ECC71; }
+        """)
+        self.start_button.clicked.connect(self.start_selected_tutorial)
+        
+        close_button = QPushButton("❌ Cerrar")
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #E74C3C;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                font-size: 14px;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #EC7063; }
+        """)
+        close_button.clicked.connect(self.close)
+        
+        button_layout.addWidget(self.start_button)
+        button_layout.addStretch()
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
+    
+    def start_selected_tutorial(self):
+        """Inicia el tutorial seleccionado"""
+        current_item = self.tutorials_list.currentItem()
+        if not current_item:
+            QMessageBox.information(self, "Selección requerida", 
+                                  "Por favor selecciona un tutorial de la lista.")
+            return
+        
+        tutorial_id = current_item.data(Qt.ItemDataRole.UserRole)
+        if self.tutorial_manager and self.tutorial_manager.start_tutorial(tutorial_id):
+            # Cerrar este diálogo y abrir el diálogo de tutorial paso a paso
+            self.accept()
+            
+            # Crear y mostrar el diálogo de tutorial paso a paso
+            tutorial_step_dialog = TutorialStepDialog(self.parent(), self.tutorial_manager)
+            tutorial_step_dialog.exec()
+        else:
+            QMessageBox.warning(self, "Error", 
+                              "No se pudo iniciar el tutorial seleccionado.")
+
+
+class TutorialStepDialog(QDialog):
+    """Diálogo para mostrar y seguir los pasos de un tutorial"""
+    
+    def __init__(self, parent=None, tutorial_manager=None):
+        super().__init__(parent)
+        self.tutorial_manager = tutorial_manager
+        self.setWindowTitle("📖 Tutorial Paso a Paso")
+        self.setGeometry(150, 50, 900, 700)
+        self.setModal(True)
+        
+        # Aplicar estilo de fondo negro y texto blanco
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1E1E1E;
+                color: #FFFFFF;
+            }
+            QLabel {
+                color: #FFFFFF;
+                background-color: transparent;
+            }
+            QTextEdit {
+                background-color: #2D2D2D;
+                color: #FFFFFF;
+                border: 1px solid #404040;
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 12px;
+            }
+            QPlainTextEdit {
+                background-color: #2D2D2D;
+                color: #FFFFFF;
+                border: 1px solid #404040;
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 12px;
+            }
+            QPushButton {
+                background-color: #404040;
+                color: #FFFFFF;
+                border: 1px solid #606060;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+                border: 1px solid #707070;
+            }
+            QPushButton:pressed {
+                background-color: #353535;
+            }
+            QPushButton:disabled {
+                background-color: #2A2A2A;
+                color: #666666;
+                border: 1px solid #3A3A3A;
+            }
+            QProgressBar {
+                background-color: #2D2D2D;
+                border: 1px solid #404040;
+                border-radius: 5px;
+                text-align: center;
+                color: #FFFFFF;
+            }
+            QProgressBar::chunk {
+                background-color: #0078D4;
+                border-radius: 4px;
+            }
+        """)
+        
+        self._setup_ui()
+        self._load_current_step()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Información del tutorial
+        self.tutorial_info = QLabel()
+        self.tutorial_info.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #FFFFFF;
+                background-color: #3C3C3C;
+                padding: 10px;
+                border-radius: 5px;
+                margin: 5px;
+                border: 1px solid #555555;
+            }
+        """)
+        layout.addWidget(self.tutorial_info)
+        
+        # Barra de progreso
+        self.progress_label = QLabel()
+        self.progress_label.setStyleSheet("font-size: 14px; color: #CCCCCC; margin: 5px;")
+        layout.addWidget(self.progress_label)
+        
+        # Contenido del paso actual
+        self.step_content = QTextEdit()
+        self.step_content.setReadOnly(True)
+        layout.addWidget(self.step_content)
+        
+        # Área de código del usuario
+        self.user_code_label = QLabel("💻 Tu código (escribe aquí):")
+        self.user_code_label.setStyleSheet("font-weight: bold; margin-top: 10px; color: #FFFFFF;")
+        layout.addWidget(self.user_code_label)
+        
+        self.user_code = QTextEdit()
+        self.user_code.setPlaceholderText("Escribe tu código Python aquí...")
+        self.user_code.setMaximumHeight(150)
+        layout.addWidget(self.user_code)
+        
+        # Botones de navegación
+        button_layout = QHBoxLayout()
+        
+        self.prev_button = QPushButton("⬅️ Anterior")
+        self.prev_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6C757D;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #5A6268; }
+            QPushButton:disabled { background-color: #CED4DA; }
+        """)
+        self.prev_button.clicked.connect(self.previous_step)
+        
+        self.check_button = QPushButton("✅ Verificar Código")
+        self.check_button.setStyleSheet("""
+            QPushButton {
+                background-color: #28A745;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #218838; }
+        """)
+        self.check_button.clicked.connect(self.check_code)
+        
+        self.next_button = QPushButton("➡️ Siguiente")
+        self.next_button.setStyleSheet("""
+            QPushButton {
+                background-color: #007BFF;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #0056B3; }
+            QPushButton:disabled { background-color: #CED4DA; }
+        """)
+        self.next_button.clicked.connect(self.next_step)
+        
+        self.close_button = QPushButton("❌ Salir del Tutorial")
+        self.close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #DC3545;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #C82333; }
+        """)
+        self.close_button.clicked.connect(self.close)
+        
+        button_layout.addWidget(self.prev_button)
+        button_layout.addWidget(self.check_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.next_button)
+        button_layout.addWidget(self.close_button)
+        
+        layout.addLayout(button_layout)
+    
+    def _load_current_step(self):
+        """Carga la información del paso actual"""
+        if not self.tutorial_manager:
+            return
+        
+        info = self.tutorial_manager.get_current_tutorial_info()
+        if not info:
+            return
+        
+        # Actualizar información del tutorial
+        self.tutorial_info.setText(f"📖 {info['tutorial_title']}")
+        
+        # Actualizar progreso
+        progress_text = f"📊 Paso {info['step_number']} de {info['total_steps']} | "
+        progress_percent = int(info['progress'] * 100)
+        progress_text += f"Progreso: {progress_percent}%"
+        self.progress_label.setText(progress_text)
+        
+        # Actualizar contenido del paso
+        step_content = f"<h2 style='color: #FFFFFF;'>{info['step_title']}</h2>"
+        step_content += f"<div style='margin: 15px 0; color: #FFFFFF;'>{info['step_content']}</div>"
+        
+        if info.get('code_example'):
+            step_content += "<h3 style='color: #4CAF50;'>💻 Ejemplo de código:</h3>"
+            step_content += f"<pre style='background-color: #1E1E1E; color: #E0E0E0; padding: 10px; border-radius: 5px; border-left: 4px solid #4CAF50; font-family: Consolas, Monaco, monospace;'><code>{info['code_example']}</code></pre>"
+        
+        if info.get('expected_output'):
+            step_content += "<h3 style='color: #FF9800;'>📤 Salida esperada:</h3>"
+            step_content += f"<pre style='background-color: #2D2D2D; color: #FFFFFF; padding: 10px; border-radius: 5px; border-left: 4px solid #FF9800; font-family: Consolas, Monaco, monospace;'>{info['expected_output']}</pre>"
+        
+        if info.get('hints'):
+            step_content += "<h3 style='color: #9C27B0;'>💡 Pistas:</h3><ul>"
+            for hint in info['hints']:
+                step_content += f"<li style='margin: 5px 0; color: #CCCCCC;'>{hint}</li>"
+            step_content += "</ul>"
+        
+        self.step_content.setHtml(step_content)
+        
+        # Actualizar estado de botones
+        self.prev_button.setEnabled(info['step_number'] > 1)
+        self.next_button.setEnabled(info['step_number'] < info['total_steps'])
+        
+        # Si es el último paso, cambiar texto del botón siguiente
+        if info['step_number'] == info['total_steps']:
+            self.next_button.setText("🎉 Completar Tutorial")
+    
+    def previous_step(self):
+        """Va al paso anterior"""
+        if self.tutorial_manager and self.tutorial_manager.previous_tutorial_step():
+            self._load_current_step()
+    
+    def next_step(self):
+        """Va al siguiente paso"""
+        if not self.tutorial_manager:
+            return
+        
+        info = self.tutorial_manager.get_current_tutorial_info()
+        if info and info['step_number'] == info['total_steps']:
+            # Es el último paso, mostrar felicitaciones
+            QMessageBox.information(self, "🎉 ¡Felicitaciones!", 
+                                  f"¡Has completado el tutorial '{info['tutorial_title']}'!\n\n"
+                                  "🌟 ¡Excelente trabajo! Ahora puedes:\n"
+                                  "• Intentar otro tutorial\n"
+                                  "• Practicar lo aprendido en el editor\n"
+                                  "• Usar el debugger (F5) para explorar tu código")
+            self.close()
+        else:
+            if self.tutorial_manager.next_tutorial_step():
+                self._load_current_step()
+    
+    def check_code(self):
+        """Verifica el código del usuario"""
+        user_code = self.user_code.toPlainText().strip()
+        
+        if not user_code:
+            QMessageBox.information(self, "Código requerido", 
+                                  "Por favor escribe algo de código antes de verificar.")
+            return
+        
+        # Validación básica del código
+        result = self.tutorial_manager.validate_step_code(user_code) if self.tutorial_manager else {'valid': True, 'message': 'Código verificado'}
+        
+        if result['valid']:
+            QMessageBox.information(self, "✅ ¡Muy bien!", 
+                                  f"{result['message']}\n\n💡 Puedes continuar al siguiente paso.")
+        else:
+            QMessageBox.warning(self, "🔍 Revisar código", 
+                              f"{result['message']}\n\n💡 Revisa las pistas y el ejemplo para ayudarte.")
+
+
+class DebuggerDialog(QDialog):
+    """Diálogo para debugging visual"""
+    
+    def __init__(self, parent=None, code=""):
+        super().__init__(parent)
+        self.code = code
+        self.setWindowTitle("🐛 Debugger Visual - Ejecutar Paso a Paso")
+        self.setGeometry(150, 50, 900, 700)
+        self.setModal(True)
+        self.manager = None
+        self._code_area = None
+        self._variables_area = None
+        self._output_area = None
+        self._step_button = None
+        self._run_button = None
+        self._stop_button = None
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Título
+        title = QLabel("🐛 Debugger Visual de Python")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin: 10px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Área de código
+        code_area = QTextEdit()
+        code_area.setPlainText(self.code)
+        code_area.setReadOnly(True)
+        code_area.setMaximumHeight(200)
+        self._code_area = code_area
+        layout.addWidget(QLabel("📝 Código a debuggear:"))
+        layout.addWidget(code_area)
+        
+        # Controles de debugging
+        controls_layout = QHBoxLayout()
+        
+        step_button = QPushButton("▶️ Paso")
+        run_button = QPushButton("🚀 Ejecutar")
+        stop_button = QPushButton("⏹️ Detener")
+        self._step_button = step_button
+        self._run_button = run_button
+        self._stop_button = stop_button
+        
+        for btn in [step_button, run_button, stop_button]:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3498DB;
+                    color: white;
+                    border: none;
+                    padding: 8px 15px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                }
+                QPushButton:hover { background-color: #5DADE2; }
+            """)
+        
+        controls_layout.addWidget(step_button)
+        controls_layout.addWidget(run_button)
+        controls_layout.addWidget(stop_button)
+        controls_layout.addStretch()
+        
+        layout.addLayout(controls_layout)
+        
+        # Área de variables
+        variables_area = QTextEdit()
+        variables_area.setPlainText("🔍 Variables:\n\n(Inicia el debugging para ver las variables)")
+        variables_area.setMaximumHeight(150)
+        variables_area.setReadOnly(True)
+        self._variables_area = variables_area
+        layout.addWidget(QLabel("📊 Variables:"))
+        layout.addWidget(variables_area)
+        
+        # Área de salida
+        output_area = QTextEdit()
+        output_area.setPlainText("📤 Salida:\n\n(La salida del programa aparecerá aquí)")
+        output_area.setReadOnly(True)
+        self._output_area = output_area
+        layout.addWidget(QLabel("📤 Salida del programa:"))
+        layout.addWidget(output_area)
+        
+        # Botón cerrar
+        close_button = QPushButton("❌ Cerrar")
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #E74C3C;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #EC7063; }
+        """)
+        close_button.clicked.connect(self.close)
+        layout.addWidget(close_button)
+
+        # Conectar lógica del debugger
+        try:
+            from analyzers.visual_debugger import get_debugger_manager
+            self.manager = get_debugger_manager()
+            self._start_session()
+        except Exception as e:
+            QMessageBox.critical(self, "Debugger", f"No se pudo iniciar el debugger: {e}")
+
+        step_button.clicked.connect(self._on_step)
+        run_button.clicked.connect(self._on_run)
+        stop_button.clicked.connect(self._on_stop)
+
+    def _start_session(self):
+        if not self.manager:
+            return
+        res = self.manager.start_debugging(self.code)
+        state = res.get("state") if isinstance(res, dict) else None
+        if state:
+            self._render_state(state)
+
+    def _on_step(self):
+        if not self.manager:
+            return
+        state = self.manager.step_over()
+        self._render_state(state)
+
+    def _on_run(self):
+        if not self.manager:
+            return
+        state = self.manager.run_to_breakpoint()
+        self._render_state(state)
+
+    def _on_stop(self):
+        if not self.manager:
+            return
+        self.manager.stop_debugging()
+        self._variables_area.setPlainText("🔍 Variables:\n\n(Detenido)")
+        self._output_area.setPlainText("📤 Salida:\n\n(Detenido)")
+        self._highlight_line(None)
+
+    def _render_state(self, state: dict):
+        # Errores
+        err = state.get("error")
+        if err:
+            self._output_area.setPlainText("📤 Salida:\n\n" + "\n".join(state.get("output") or []) + "\n\n❌ " + str(err))
+        else:
+            self._output_area.setPlainText("📤 Salida:\n\n" + "\n".join(state.get("output") or []))
+
+        # Variables
+        vars_d = state.get("variables") or {}
+        lines = ["🔍 Variables:"]
+        for name in sorted(vars_d.keys()):
+            info = vars_d[name] or {}
+            lines.append(f"- {name}: {info.get('value')}  ({info.get('type')})")
+        if len(lines) == 1:
+            lines.append("(sin variables)")
+        self._variables_area.setPlainText("\n".join(lines))
+
+        # Línea actual (aprox)
+        cur_line = state.get("current_line")
+        if isinstance(cur_line, int) and cur_line > 0:
+            self._highlight_line(cur_line)
+        else:
+            self._highlight_line(None)
+
+        finished = state.get("finished", False)
+        if finished:
+            try:
+                self._step_button.setEnabled(False)
+                self._run_button.setEnabled(False)
+            except Exception:
+                pass
+
+    def _highlight_line(self, line_no):
+        """Resalta línea actual en el code_area."""
+        if not self._code_area:
+            return
+        extra = []
+        if isinstance(line_no, int) and line_no > 0:
+            try:
+                block = self._code_area.document().findBlockByNumber(line_no - 1)
+                if block.isValid():
+                    cur = QTextCursor(block)
+                    cur.select(QTextCursor.SelectionType.LineUnderCursor)
+                    sel = QTextEdit.ExtraSelection()
+                    fmt = QTextCharFormat()
+                    fmt.setBackground(QColor(38, 79, 120, 140))
+                    sel.format = fmt
+                    sel.cursor = cur
+                    extra.append(sel)
+                    self._code_area.setTextCursor(cur)
+            except Exception:
+                pass
+        self._code_area.setExtraSelections(extra)
+
+
+class PackageManagerDialog(QDialog):
+    """Diálogo para gestión de paquetes"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("📦 Gestor de Paquetes Python")
+        self.setGeometry(100, 100, 700, 500)
+        self.setModal(True)
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Título
+        title = QLabel("📦 Gestor de Paquetes Python")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin: 10px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Pestañas
+        tabs = QTabWidget()
+        
+        # Pestaña de paquetes populares
+        popular_tab = QWidget()
+        popular_layout = QVBoxLayout(popular_tab)
+        popular_layout.addWidget(QLabel("🌟 Paquetes populares para principiantes:"))
+        
+        popular_list = QListWidget()
+        popular_packages = [
+            "📊 matplotlib - Crear gráficos y visualizaciones",
+            "🌐 requests - Realizar peticiones HTTP",
+            "📈 pandas - Análisis de datos",
+            "🔢 numpy - Operaciones matemáticas",
+            "🖼️ pillow - Manipular imágenes",
+            "🎮 pygame - Crear juegos 2D"
+        ]
+        
+        for package in popular_packages:
+            popular_list.addItem(package)
+        
+        popular_layout.addWidget(popular_list)
+        
+        # Botones
+        button_layout = QHBoxLayout()
+        install_button = QPushButton("⬇️ Instalar Seleccionado")
+        install_button.setStyleSheet("""
+            QPushButton {
+                background-color: #27AE60;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #2ECC71; }
+        """)
+        
+        button_layout.addWidget(install_button)
+        button_layout.addStretch()
+        popular_layout.addLayout(button_layout)
+        
+        tabs.addTab(popular_tab, "🌟 Populares")
+        
+        # Pestaña de instalados
+        installed_tab = QWidget()
+        installed_layout = QVBoxLayout(installed_tab)
+        installed_layout.addWidget(QLabel("📦 Paquetes instalados:"))
+        
+        installed_list = QListWidget()
+        installed_list.addItem("✅ Python Standard Library (incluido)")
+        installed_list.addItem("✅ tkinter (incluido)")
+        installed_list.addItem("✅ sqlite3 (incluido)")
+        
+        installed_layout.addWidget(installed_list)
+        tabs.addTab(installed_tab, "✅ Instalados")
+        
+        layout.addWidget(tabs)
+        
+        # Botón cerrar
+        close_button = QPushButton("❌ Cerrar")
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #E74C3C;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #EC7063; }
+        """)
+        close_button.clicked.connect(self.close)
+        layout.addWidget(close_button)
