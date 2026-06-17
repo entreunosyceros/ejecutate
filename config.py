@@ -92,6 +92,12 @@ class AppConfig:
     FORMATTER_ADD_FINAL_NEWLINE = True
     FORMATTER_SORT_IMPORTS_GROUPS = True  # Separar stdlib, third-party, local
     FORMATTER_ENGINE = "autopep8"  # autopep8, black, o manual
+
+    # Modo Café / Pomodoro
+    COFFEE_MESSAGE = "Mueve el ratón o pulsa cualquier tecla para volver."
+    COFFEE_POMODORO_ENABLED = False
+    COFFEE_POMODORO_WORK_MINUTES = 25
+    COFFEE_POMODORO_BREAK_MINUTES = 5
     
     # Configuración de búsqueda y reemplazo
     SEARCH_ENABLED = True

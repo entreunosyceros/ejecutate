@@ -85,6 +85,17 @@ def _apply_editor_text_palette(editor, settings: dict) -> None:
     editor.setPalette(palette)
 
 
+def _format_countdown(seconds: int) -> str:
+    """Formatea segundos como MM:SS."""
+    seconds = max(0, int(seconds))
+    minutes, secs = divmod(seconds, 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _qsettings_bool(value) -> bool:
+    return str(value).lower() in ("true", "1", "yes")
+
+
 def _maybe_load_svg_icon(svg_path: str) -> QIcon:
     """Carga un icono SVG si QtSvg está disponible; fallback a QIcon normal."""
     try:
@@ -1710,10 +1721,10 @@ class PreferencesDialog(QDialog):
         })
         
         # Modo Café
-        theme_settings.setdefault(
-            "coffee_message",
-            "Mueve el ratón o pulsa cualquier tecla para volver."
-        )
+        theme_settings.setdefault("coffee_message", AppConfig.COFFEE_MESSAGE)
+        theme_settings.setdefault("coffee_pomodoro_enabled", AppConfig.COFFEE_POMODORO_ENABLED)
+        theme_settings.setdefault("coffee_pomodoro_work_minutes", AppConfig.COFFEE_POMODORO_WORK_MINUTES)
+        theme_settings.setdefault("coffee_pomodoro_break_minutes", AppConfig.COFFEE_POMODORO_BREAK_MINUTES)
 
         return theme_settings
 
@@ -1737,6 +1748,53 @@ class PreferencesDialog(QDialog):
         g_layout.addWidget(hint)
 
         layout.addWidget(group)
+
+        pomodoro_group = QGroupBox("🍅 Pomodoro automático")
+        p_layout = QVBoxLayout(pomodoro_group)
+
+        self.coffee_pomodoro_enabled = QCheckBox("Activar descansos automáticos cada X minutos")
+        self.coffee_pomodoro_enabled.setChecked(
+            _qsettings_bool(self.current_settings.get("coffee_pomodoro_enabled", False))
+        )
+        self.coffee_pomodoro_enabled.toggled.connect(lambda _c: self._apply_preview())
+        p_layout.addWidget(self.coffee_pomodoro_enabled)
+
+        work_row = QHBoxLayout()
+        work_row.addWidget(QLabel("Intervalo de trabajo:"))
+        self.coffee_pomodoro_work_minutes = QSpinBox()
+        self.coffee_pomodoro_work_minutes.setRange(1, 180)
+        self.coffee_pomodoro_work_minutes.setSuffix(" min")
+        self.coffee_pomodoro_work_minutes.setValue(
+            int(self.current_settings.get("coffee_pomodoro_work_minutes", AppConfig.COFFEE_POMODORO_WORK_MINUTES))
+        )
+        self.coffee_pomodoro_work_minutes.valueChanged.connect(lambda _v: self._apply_preview())
+        work_row.addWidget(self.coffee_pomodoro_work_minutes)
+        work_row.addStretch()
+        p_layout.addLayout(work_row)
+
+        break_row = QHBoxLayout()
+        break_row.addWidget(QLabel("Duración del descanso:"))
+        self.coffee_pomodoro_break_minutes = QSpinBox()
+        self.coffee_pomodoro_break_minutes.setRange(1, 60)
+        self.coffee_pomodoro_break_minutes.setSuffix(" min")
+        self.coffee_pomodoro_break_minutes.setValue(
+            int(self.current_settings.get("coffee_pomodoro_break_minutes", AppConfig.COFFEE_POMODORO_BREAK_MINUTES))
+        )
+        self.coffee_pomodoro_break_minutes.valueChanged.connect(lambda _v: self._apply_preview())
+        break_row.addWidget(self.coffee_pomodoro_break_minutes)
+        break_row.addStretch()
+        p_layout.addLayout(break_row)
+
+        pomodoro_hint = QLabel(
+            "Con Pomodoro activo verás una cuenta atrás en la barra de estado hasta el próximo "
+            "descanso. Al activarse el Modo Café (automático o con el botón ☕) aparecerá un "
+            "temporizador con el tiempo restante de descanso."
+        )
+        pomodoro_hint.setWordWrap(True)
+        pomodoro_hint.setStyleSheet("color: #888;")
+        p_layout.addWidget(pomodoro_hint)
+
+        layout.addWidget(pomodoro_group)
         layout.addStretch()
         return widget
     
@@ -2531,6 +2589,17 @@ def calcular(precio,descuento):
         self._update_color_button(self.line_text_button, defaults['line_number_text_color'])
         self._update_color_button(self.output_bg_button, defaults['output_bg_color'])
         self._update_color_button(self.output_text_button, defaults['output_text_color'])
+
+        if hasattr(self, "coffee_message_input"):
+            self.coffee_message_input.setText(defaults.get("coffee_message", AppConfig.COFFEE_MESSAGE))
+        if hasattr(self, "coffee_pomodoro_enabled"):
+            self.coffee_pomodoro_enabled.setChecked(defaults.get("coffee_pomodoro_enabled", False))
+            self.coffee_pomodoro_work_minutes.setValue(
+                int(defaults.get("coffee_pomodoro_work_minutes", AppConfig.COFFEE_POMODORO_WORK_MINUTES))
+            )
+            self.coffee_pomodoro_break_minutes.setValue(
+                int(defaults.get("coffee_pomodoro_break_minutes", AppConfig.COFFEE_POMODORO_BREAK_MINUTES))
+            )
         
         # Aplicar vista previa de los valores por defecto
         self._apply_preview()
@@ -2544,6 +2613,10 @@ def calcular(precio,descuento):
 
         if hasattr(self, "coffee_message_input"):
             self.new_settings["coffee_message"] = self.coffee_message_input.text()
+        if hasattr(self, "coffee_pomodoro_enabled"):
+            self.new_settings["coffee_pomodoro_enabled"] = self.coffee_pomodoro_enabled.isChecked()
+            self.new_settings["coffee_pomodoro_work_minutes"] = self.coffee_pomodoro_work_minutes.value()
+            self.new_settings["coffee_pomodoro_break_minutes"] = self.coffee_pomodoro_break_minutes.value()
         
         # Configuraciones del formatter (si existen los controles)
         if hasattr(self, 'formatter_enabled_checkbox'):
@@ -5298,6 +5371,10 @@ class CodeEditorViewPySide:
             self._status_left = QLabel("Listo")
             self._status_pos = QLabel("Ln 1, Col 1")
             self._status_theme = QLabel(self._get_current_settings().get("current_theme", AppConfig.DEFAULT_THEME))
+            self._status_pomodoro = QLabel("")
+            self._status_pomodoro.setToolTip("Cuenta atrás Pomodoro hasta el próximo descanso")
+            self._status_pomodoro.hide()
+            sb.addPermanentWidget(self._status_pomodoro)
             sb.addPermanentWidget(self._status_pos)
             sb.addPermanentWidget(self._status_theme)
         except Exception:
@@ -5524,7 +5601,13 @@ class CodeEditorViewPySide:
         self._coffee_active = False
         self._coffee_prev_settings = None
         self._coffee_ignore_next_event = False
+        self._pomodoro_phase = None
+        self._pomodoro_seconds_left = 0
+        self._pomodoro_tick_timer = QTimer(self.window)
+        self._pomodoro_tick_timer.setInterval(1000)
+        self._pomodoro_tick_timer.timeout.connect(self._tick_pomodoro)
         self._build_coffee_overlay()
+        self._configure_pomodoro_timer()
 
     def _set_activity_active(self, btn: QToolButton):
         """Marca un botón del Activity Bar como activo visualmente."""
@@ -5562,6 +5645,7 @@ class CodeEditorViewPySide:
                 }
                 QLabel#CoffeeTitle { color: #F3E7DA; font-size: 22px; font-weight: 600; }
                 QLabel#CoffeeHint { color: #CDB8A6; font-size: 13px; }
+                QLabel#CoffeeBreakTimer { color: #E2B07A; font-size: 32px; font-weight: 600; font-family: Consolas; }
             """)
 
             lay = QVBoxLayout(self.coffee_overlay)
@@ -5598,6 +5682,12 @@ class CodeEditorViewPySide:
             hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
             c_lay.addWidget(hint)
 
+            break_timer = QLabel("")
+            break_timer.setObjectName("CoffeeBreakTimer")
+            break_timer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            break_timer.hide()
+            c_lay.addWidget(break_timer)
+
             lay.addWidget(center)
             lay.addStretch()
 
@@ -5630,8 +5720,105 @@ class CodeEditorViewPySide:
         else:
             self.enable_coffee_mode()
 
+    def _coffee_pref(self, key, default=None):
+        if self.current_preferences and key in self.current_preferences:
+            return self.current_preferences[key]
+        return self._get_current_settings().get(key, default)
+
+    def _is_pomodoro_enabled(self) -> bool:
+        return _qsettings_bool(self._coffee_pref("coffee_pomodoro_enabled", False))
+
+    def _pomodoro_work_seconds(self) -> int:
+        minutes = int(self._coffee_pref("coffee_pomodoro_work_minutes", AppConfig.COFFEE_POMODORO_WORK_MINUTES))
+        return max(1, minutes) * 60
+
+    def _pomodoro_break_seconds(self) -> int:
+        minutes = int(self._coffee_pref("coffee_pomodoro_break_minutes", AppConfig.COFFEE_POMODORO_BREAK_MINUTES))
+        return max(1, minutes) * 60
+
+    def _configure_pomodoro_timer(self):
+        """Arranca o detiene el Pomodoro según preferencias."""
+        if not self._is_pomodoro_enabled():
+            self._stop_pomodoro_timer()
+            return
+        if self._coffee_active:
+            return
+        self._start_pomodoro_work_timer()
+
+    def _stop_pomodoro_timer(self):
+        self._pomodoro_tick_timer.stop()
+        self._pomodoro_phase = None
+        self._pomodoro_seconds_left = 0
+        if hasattr(self, "_status_pomodoro"):
+            self._status_pomodoro.hide()
+        self._set_pomodoro_break_overlay_visible(False)
+
+    def _start_pomodoro_work_timer(self):
+        if not self._is_pomodoro_enabled():
+            self._stop_pomodoro_timer()
+            return
+        self._pomodoro_phase = "work"
+        self._pomodoro_seconds_left = self._pomodoro_work_seconds()
+        if not self._pomodoro_tick_timer.isActive():
+            self._pomodoro_tick_timer.start()
+        self._update_pomodoro_status_label()
+
+    def _start_pomodoro_break_timer(self):
+        self._pomodoro_phase = "break"
+        self._pomodoro_seconds_left = self._pomodoro_break_seconds()
+        if not self._pomodoro_tick_timer.isActive():
+            self._pomodoro_tick_timer.start()
+        self._set_pomodoro_break_overlay_visible(True)
+        self._update_pomodoro_break_overlay_label()
+        if hasattr(self, "_status_pomodoro"):
+            self._status_pomodoro.hide()
+
+    def _tick_pomodoro(self):
+        if not self._is_pomodoro_enabled() or not self._pomodoro_phase:
+            self._stop_pomodoro_timer()
+            return
+
+        if self._pomodoro_seconds_left > 0:
+            self._pomodoro_seconds_left -= 1
+
+        if self._pomodoro_phase == "work":
+            self._update_pomodoro_status_label()
+            if self._pomodoro_seconds_left <= 0 and not self._coffee_active:
+                self.enable_coffee_mode()
+        elif self._pomodoro_phase == "break":
+            self._update_pomodoro_break_overlay_label()
+            if self._pomodoro_seconds_left <= 0 and self._coffee_active:
+                self.disable_coffee_mode()
+
+    def _update_pomodoro_status_label(self):
+        if not hasattr(self, "_status_pomodoro"):
+            return
+        if not self._is_pomodoro_enabled() or self._pomodoro_phase != "work" or self._coffee_active:
+            self._status_pomodoro.hide()
+            return
+        self._status_pomodoro.setText(f"☕ {_format_countdown(self._pomodoro_seconds_left)}")
+        self._status_pomodoro.show()
+
+    def _set_pomodoro_break_overlay_visible(self, visible: bool):
+        if not hasattr(self, "coffee_overlay"):
+            return
+        lbl = self.coffee_overlay.findChild(QLabel, "CoffeeBreakTimer")
+        if lbl:
+            lbl.setVisible(visible and self._is_pomodoro_enabled())
+            if not visible:
+                lbl.setText("")
+
+    def _update_pomodoro_break_overlay_label(self):
+        if not hasattr(self, "coffee_overlay"):
+            return
+        lbl = self.coffee_overlay.findChild(QLabel, "CoffeeBreakTimer")
+        if not lbl or not self._is_pomodoro_enabled():
+            return
+        lbl.setText(f"Descanso: {_format_countdown(self._pomodoro_seconds_left)}")
+        lbl.show()
+
     def enable_coffee_mode(self):
-        """Activa modo café: aplica tema cálido y bloquea UI hasta input."""
+        """Activa modo café: aplica tema cálido y bloquea UI hasta input o fin de descanso."""
         try:
             if self._coffee_active:
                 return
@@ -5640,9 +5827,16 @@ class CodeEditorViewPySide:
 
             # Guardar settings actuales para restaurar
             try:
-                self._coffee_prev_settings = self._get_current_settings()
+                self._coffee_prev_settings = (
+                    self.current_preferences.copy()
+                    if self.current_preferences
+                    else self._get_current_settings()
+                )
             except Exception:
                 self._coffee_prev_settings = None
+
+            if self._is_pomodoro_enabled():
+                self._start_pomodoro_break_timer()
 
             # Aplicar tema Café sin persistir (preview)
             try:
@@ -5662,13 +5856,16 @@ class CodeEditorViewPySide:
 
             # Actualizar mensaje desde preferencias al entrar
             try:
-                msg = self._get_current_settings().get("coffee_message", "")
+                msg = self._coffee_pref("coffee_message", AppConfig.COFFEE_MESSAGE)
                 if msg and hasattr(self, "coffee_overlay"):
                     lbl = self.coffee_overlay.findChild(QLabel, "CoffeeHint")
                     if lbl:
                         lbl.setText(msg)
             except Exception:
                 pass
+
+            if self._is_pomodoro_enabled():
+                self._update_pomodoro_break_overlay_label()
 
             # Después de un instante, ya permitimos salir por input
             QTimer.singleShot(150, lambda: setattr(self, "_coffee_ignore_next_event", False))
@@ -5693,6 +5890,9 @@ class CodeEditorViewPySide:
                 except Exception:
                     pass
             self._coffee_prev_settings = None
+            self._set_pomodoro_break_overlay_visible(False)
+            if self._is_pomodoro_enabled():
+                self._start_pomodoro_work_timer()
         except Exception as e:
             print("disable coffee failed:", e)
 
@@ -6519,7 +6719,10 @@ class CodeEditorViewPySide:
             'output_font_size': 11,
             'output_bg_color': '#FAFAFA',
             'output_text_color': '#2C3E50',
-            'coffee_message': "Mueve el ratón o pulsa cualquier tecla para volver."
+            'coffee_message': AppConfig.COFFEE_MESSAGE,
+            'coffee_pomodoro_enabled': AppConfig.COFFEE_POMODORO_ENABLED,
+            'coffee_pomodoro_work_minutes': AppConfig.COFFEE_POMODORO_WORK_MINUTES,
+            'coffee_pomodoro_break_minutes': AppConfig.COFFEE_POMODORO_BREAK_MINUTES,
         }
         
         # Cargar valores guardados o usar defaults
@@ -6531,6 +6734,13 @@ class CodeEditorViewPySide:
             if 'font_size' in key:
                 try:
                     current_settings[key] = int(stored_value)
+                except (ValueError, TypeError):
+                    current_settings[key] = default_value
+            elif key == 'coffee_pomodoro_enabled':
+                current_settings[key] = _qsettings_bool(stored_value)
+            elif key in ('coffee_pomodoro_work_minutes', 'coffee_pomodoro_break_minutes'):
+                try:
+                    current_settings[key] = max(1, int(stored_value))
                 except (ValueError, TypeError):
                     current_settings[key] = default_value
             else:
@@ -6690,6 +6900,8 @@ class CodeEditorViewPySide:
         if not preview:
             self._save_settings(settings_dict)
             self.show_message("Preferencias", "✅ Preferencias aplicadas y guardadas correctamente", "info")
+
+        self._configure_pomodoro_timer()
     
     def _apply_auto_formatting(self, code):
         """Aplica formateo automático al código si está habilitado"""
