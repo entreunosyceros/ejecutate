@@ -35,10 +35,15 @@ def install_dependencies():
     if not venv_python:
         return False
     
-    print("📦 Instalando dependencias PySide6 y Pygments...")
+    requirements_path = Path(__file__).parent / "requirements.txt"
+    if requirements_path.exists():
+        print("📦 Instalando dependencias desde requirements.txt...")
+        cmd = [venv_python, "-m", "pip", "install", "-r", str(requirements_path)]
+    else:
+        print("📦 Instalando dependencias PySide6 y Pygments...")
+        cmd = [venv_python, "-m", "pip", "install", "PySide6", "Pygments"]
     try:
-        subprocess.run([venv_python, "-m", "pip", "install", "PySide6", "Pygments"], 
-                      check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True)
         print("✅ Dependencias instaladas correctamente")
         return True
     except subprocess.CalledProcessError as e:
@@ -46,30 +51,24 @@ def install_dependencies():
         return False
 
 def run_app_with_venv():
-    """Ejecuta la aplicación usando el entorno virtual de manera directa"""
+    """Ejecuta la aplicación usando el entorno virtual (sin tocar sys.path)"""
     venv_python = get_venv_python()
     
     if not venv_python:
         print("❌ No se pudo encontrar el entorno virtual")
         return False
-    
-    # Activar el entorno virtual añadiendo sus rutas al path
+
     script_dir = Path(__file__).parent
-    venv_site_packages = script_dir / ".venv" / "lib" / "python3.12" / "site-packages"
-    
-    if venv_site_packages.exists():
-        sys.path.insert(0, str(venv_site_packages))
-    
-    # Agregar el directorio actual al path
-    sys.path.insert(0, str(script_dir))
-    
-    print("🚀 Iniciando Editor de código Python Ejecútate! (modo directo)...")
-    
+    main_path = script_dir / "main.py"
+
+    print("🚀 Iniciando Editor de código Python Ejecútate! (usando .venv)...")
     try:
-        # Importar y ejecutar directamente
-        from controllers.editor_controller import CodeEditorController
-        app = CodeEditorController()
-        return app.run()
+        # Ejecutar con el intérprete del venv evita depender del python del sistema/conda
+        proc = subprocess.run(
+            [venv_python, str(main_path)],
+            cwd=str(script_dir),
+        )
+        return proc.returncode == 0
     except Exception as e:
         print(f"❌ Error al ejecutar la aplicación: {e}")
         import traceback

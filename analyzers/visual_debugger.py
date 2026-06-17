@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import io
 import contextlib
+import codeop
 
 @dataclass
 class BreakPoint:
@@ -55,6 +56,8 @@ class SimpleDebugger:
         self.finished = False
         self.execution_context = {}
         self.step_mode = False
+        self._pending_lines: List[str] = []
+        self._pending_start_line: int = 1
     
     def set_code(self, code: str):
         """Establece el código a debuggear"""
@@ -70,6 +73,8 @@ class SimpleDebugger:
         self.error = None
         self.finished = False
         self.execution_context = {}
+        self._pending_lines = []
+        self._pending_start_line = 1
     
     def add_breakpoint(self, line_number: int, condition: str = "") -> bool:
         """Agrega un breakpoint en la línea especificada"""
@@ -111,30 +116,52 @@ class SimpleDebugger:
         return False
     
     def execute_line(self, line_content: str, line_number: int) -> Tuple[bool, str]:
-        """Ejecuta una línea de código y retorna (success, output)"""
+        """Ejecuta una línea (soporta bloques multi-línea) y retorna (success, output).
+
+        Nota: para soportar if/for/def con indentación, se acumulan líneas hasta que
+        `codeop.compile_command` indique que el bloque está completo.
+        """
         try:
             # Capturar output
-            old_stdout = sys.stdout
             captured_output = io.StringIO()
             
             with contextlib.redirect_stdout(captured_output):
-                # Intentar compilar y ejecutar la línea
                 if line_content.strip():
-                    # Compilar la línea
-                    try:
-                        # Primero intentar como statement
-                        code_obj = compile(line_content, f'<line {line_number}>', 'exec')
-                        exec(code_obj, self.execution_context)
-                    except SyntaxError:
-                        # Si falla, intentar como expression
+                    # Intentar como expresión si no hay pending
+                    if not self._pending_lines:
                         try:
-                            code_obj = compile(line_content, f'<line {line_number}>', 'eval')
-                            result = eval(code_obj, self.execution_context)
+                            expr_obj = compile(line_content, f'<line {line_number}>', 'eval')
+                            result = eval(expr_obj, self.execution_context)
                             if result is not None:
                                 print(result)
-                        except:
-                            # Si ambos fallan, re-raise el error original
+                            output = captured_output.getvalue()
+                            if output:
+                                self.output.append(output.strip())
+                            return True, output
+                        except SyntaxError:
+                            # no es una expresión; seguimos a exec por bloque
+                            pass
+                        except Exception:
+                            # si era expresión pero falló runtime, reportar
                             raise
+
+                    # Bloques/exec: acumulamos y compilamos cuando esté completo
+                    if not self._pending_lines:
+                        self._pending_start_line = line_number
+                    self._pending_lines.append(line_content)
+                    pending_src = "\n".join(self._pending_lines)
+                    code_obj = codeop.compile_command(
+                        pending_src,
+                        filename=f"<block {self._pending_start_line}>",
+                        symbol="exec",
+                    )
+                    if code_obj is None:
+                        # Falta más input para completar el bloque
+                        return True, ""
+
+                    exec(code_obj, self.execution_context)
+                    # Bloque ejecutado: limpiar pending
+                    self._pending_lines = []
             
             output = captured_output.getvalue()
             if output:
@@ -154,11 +181,12 @@ class SimpleDebugger:
         
         # Buscar la siguiente línea ejecutable
         while self.current_line < len(self.lines):
-            line_content = self.lines[self.current_line].strip()
+            raw_line = self.lines[self.current_line]
+            line_content = raw_line.rstrip("\n")
             line_number = self.current_line + 1
             
             # Saltar líneas vacías y comentarios
-            if not line_content or line_content.startswith('#'):
+            if not line_content.strip() or line_content.lstrip().startswith('#'):
                 self.current_line += 1
                 continue
             
@@ -180,6 +208,12 @@ class SimpleDebugger:
         
         # Verificar si terminó la ejecución
         if self.current_line >= len(self.lines):
+            # Si queda un bloque pendiente, intentar cerrarlo con una línea en blanco
+            if self._pending_lines:
+                try:
+                    self.execute_line("", self.current_line + 1)
+                except Exception:
+                    pass
             self.finished = True
         
         return self.get_current_state()

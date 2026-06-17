@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="24" fill="none"/>
+  <!-- steam -->
+  <path d="M92 48c-10 14 10 22 0 36" stroke="#F3E7DA" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9"/>
+  <path d="M128 40c-10 14 10 22 0 36" stroke="#F3E7DA" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <path d="M164 48c-10 14 10 22 0 36" stroke="#F3E7DA" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9"/>
+  <!-- cup -->
+  <path d="M64 110h128v58a44 44 0 0 1-44 44H108a44 44 0 0 1-44-44v-58z" fill="#C47A3A"/>
+  <path d="M184 126h14a26 26 0 0 1 0 52h-22v-18h8a8 8 0 0 0 0-16h-8v-18z" fill="#C47A3A"/>
+  <path d="M72 118h112v50a36 36 0 0 1-36 36h-40a36 36 0 0 1-36-36v-50z" fill="#2B1B12" opacity="0.35"/>
+  <!-- saucer -->
+  <path d="M56 212c16 18 40 28 72 28h0c32 0 56-10 72-28" stroke="#F3E7DA" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.85"/>
+</svg>
