@@ -24,8 +24,10 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 ### Interfaz y edición
 - Activity Bar, sidebar (**Explorer / Search**) y panel inferior (**Terminal / Problems**)
 - Command Palette (`Ctrl+Shift+P`) y Quick Open (`Ctrl+P`)
-- Pestañas múltiples, resaltado de sintaxis y verificación en tiempo real
-- Explorador de archivos, autocompletado y varios temas (incluido **Café**)
+- Pestañas múltiples con aviso al cerrar si hay **cambios sin guardar**
+- **Vista previa Markdown** opcional (`Ctrl+Shift+V`) en archivos `.md`
+- Explorador con **iconos por tipo de archivo**, resaltado de sintaxis y verificación en tiempo real
+- Varios temas (incluido **Café**)
 
 ### Desarrollo
 - Terminal integrado con modos **Limpio** e **Interactivo**
@@ -44,6 +46,8 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 | `Ctrl+Enter` | Ejecutar código en Terminal |
 | `Ctrl+\`` | Alternar pestaña Terminal |
 | `Ctrl+F` / `Ctrl+H` | Buscar / Buscar y reemplazar |
+| `Ctrl+Shift+V` | Vista previa Markdown (solo `.md`) |
+| `Ctrl+W` | Cerrar pestaña (avisa si hay cambios) |
 | `Ctrl+Alt+C` | Modo Café (pausa) |
 | `F4`–`F7` | Tutoriales / Debugger / Paquetes / Análisis |
 
@@ -56,6 +60,7 @@ Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).
 | Índice general | [`Docs/README.md`](./Docs/README.md) |
 | Instalación y dependencias | [`Docs/install.md`](./Docs/install.md) |
 | Interfaz estilo Cursor | [`Docs/ui-cursor.md`](./Docs/ui-cursor.md) |
+| Markdown y archivos `.txt` | [`Docs/markdown.md`](./Docs/markdown.md) |
 | Búsqueda y reemplazo | [`Docs/search.md`](./Docs/search.md) |
 | Terminal integrado | [`Docs/terminal.md`](./Docs/terminal.md) |
 | Sistema educativo | [`Docs/education.md`](./Docs/education.md) |
@@ -65,7 +70,7 @@ Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).
 
 ## Dependencias principales
 
-PySide6 · Pygments · autopep8 · black · isort
+PySide6 · Pygments · markdown · autopep8 · black · isort
 
 ---
 

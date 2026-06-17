@@ -451,8 +451,6 @@ class IntegratedTerminalNew(QWidget):
         - interactive: envía el código al REPL embebido (prompts visibles)
         """
         try:
-            import sys as _sys
-            print('[DEBUG] execute_code_from_editor called len=', len(code), file=_sys.stderr, flush=True)
             # Asegurar ejecución en hilo GUI
             try:
                 from PySide6.QtCore import QCoreApplication, QThread, QMetaObject, Qt as _Qt
@@ -462,20 +460,18 @@ class IntegratedTerminalNew(QWidget):
                     code_copy = str(code)
                     QMetaObject.invokeMethod(self, lambda: self.execute_code_from_editor(code_copy), _Qt.QueuedConnection)
                     return True
-            except Exception as _e_dispatch:
-                print('[DEBUG] dispatch check failed', _e_dispatch, file=_sys.stderr, flush=True)
+            except Exception:
+                pass
             if not code or not code.strip():
                 return False
-            # Diagnóstico inicial
+
             def _safe_log(msg, color="#8888FF"):
                 try:
                     self.terminal_output.setTextColor(QColor(color))
                     self.terminal_output.append(msg)
                     self.terminal_output.setTextColor(QColor('#FFFFFF'))
-                except Exception as _e_log:
-                    print('[DEBUG] log-fallback:', msg, _e_log, file=_sys.stderr, flush=True)
-
-            _safe_log('[DEBUG] Inicio ejecución código, longitud: ' + str(len(code)))
+                except Exception:
+                    pass
 
             # Disparo temprano de precaptura (independiente de auto-detect) si modo limpio
             # Resolver modo actual de forma robusta (userData o texto visible)

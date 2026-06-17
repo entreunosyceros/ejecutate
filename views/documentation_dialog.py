@@ -181,8 +181,16 @@ class DocumentationDialog(QDialog):
         <h3 style="color: #E74C3C;">🔖 Sistema de Pestañas</h3>
         <ul>
             <li><strong>Nueva Pestaña:</strong> <code>Ctrl+T</code> o Menú → Archivo → Nueva Pestaña</li>
-            <li><strong>Cerrar Pestaña:</strong> <code>Ctrl+W</code> o click en la "❌" de la pestaña</li>
+            <li><strong>Cerrar Pestaña:</strong> <code>Ctrl+W</code> o click en la "❌" de la pestaña (si hay cambios sin guardar, pregunta Guardar / No / Cancelar)</li>
+            <li><strong>Indicador de cambios:</strong> un prefijo <code>•</code> en el título de la pestaña significa que no está guardada</li>
             <li><strong>Cambiar entre Pestañas:</strong> Click en las pestañas o <code>Ctrl+Tab</code></li>
+        </ul>
+        
+        <h3 style="color: #E74C3C;">📄 Markdown y texto</h3>
+        <ul>
+            <li><strong>Archivos .md:</strong> vista previa opcional con <code>Ctrl+Shift+V</code> o Vista → Vista previa Markdown</li>
+            <li><strong>.txt y .md:</strong> no permiten ejecutar código con <code>Ctrl+Enter</code></li>
+            <li><strong>Explorador:</strong> iconos distintos por tipo de archivo</li>
         </ul>
         
         <h3 style="color: #E74C3C;">💾 Guardar y Abrir Archivos</h3>

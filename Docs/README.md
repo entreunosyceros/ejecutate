@@ -6,6 +6,7 @@ Bienvenido a la documentación de **Ejecútalo!**.
 - [Instalación y ejecución](./install.md)
 - [Guía rápida y atajos](./shortcuts.md)
 - [Interfaz estilo Cursor/VS Code](./ui-cursor.md)
+- [Markdown y archivos de texto](./markdown.md)
 - [Búsqueda (Search) y reemplazo](./search.md)
 - [Terminal integrado](./terminal.md)
 - [Sistema educativo (Tutoriales/Debugger/Análisis)](./education.md)

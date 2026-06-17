@@ -41,6 +41,7 @@ python3 run_app.py
 ## Dependencias principales
 - **PySide6**: interfaz gráfica
 - **Pygments**: resaltado de sintaxis
+- **markdown**: vista previa de archivos `.md`
 - **autopep8 / black**: formateo
 - **isort**: organización de imports
 

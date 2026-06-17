@@ -14,6 +14,13 @@ from pathlib import Path
 # Importar el nuevo terminal
 from utils.new_terminal import IntegratedTerminalNew
 from utils.file_icons import explorer_folder_icon, explorer_icon_for_path, explorer_icon_size
+from utils.markdown_preview import (
+    MarkdownEditorTab,
+    get_editor_widget,
+    get_markdown_tab,
+    is_executable_path,
+    is_markdown_path,
+)
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QLabel, QTextEdit, QMessageBox,
@@ -1616,20 +1623,15 @@ class MultiFileSearchDialog(QDialog):
         """Abrir archivo y navegar a la línea"""
         file_path = item.data(0, Qt.ItemDataRole.UserRole)
         line_num = item.data(1, Qt.ItemDataRole.UserRole)
-        
-        if file_path and self.parent_editor:
-            # Abrir archivo en el editor
-            self.parent_editor.open_file(file_path)
-            
-            # Navegar a la línea específica
-            if hasattr(self.parent_editor, 'input_text') and self.parent_editor.input_text:
-                editor = self.parent_editor.input_text
-                cursor = editor.textCursor()
-                cursor.movePosition(cursor.Start)
-                for _ in range(line_num - 1):
-                    cursor.movePosition(cursor.Down)
-                editor.setTextCursor(cursor)
-                editor.ensureCursorVisible()
+
+        if not file_path or not self.parent_editor:
+            return
+
+        if hasattr(self.parent_editor, 'load_file_content'):
+            self.parent_editor.load_file_content(file_path)
+
+        if line_num and hasattr(self.parent_editor, 'jump_to_line_col'):
+            QTimer.singleShot(120, lambda: self.parent_editor.jump_to_line_col(int(line_num), 1))
 
 
 class PreferencesDialog(QDialog):
@@ -2909,6 +2911,7 @@ class FileExplorerWidget(QTreeWidget):
                         if sub_items:  # Si tiene contenido, agregar dummy
                             dummy_item = QTreeWidgetItem(tree_item)
                             dummy_item.setText(0, "Cargando...")
+                            dummy_item.setDisabled(True)
                     except PermissionError:
                         pass
                 else:
@@ -2941,37 +2944,23 @@ class FileExplorerWidget(QTreeWidget):
     
     def open_file(self, item):
         """Abre un archivo al hacer doble clic o navega a directorio"""
+        if not item:
+            return
         file_path = item.data(0, Qt.ItemDataRole.UserRole)
-        print(f"🔍 open_file llamado con: {file_path}")  # Debug
-        
+        if not file_path:
+            return
+
         if os.path.isfile(file_path):
-            print(f"✅ Es un archivo válido")  # Debug
             if self._is_supported_file(file_path):
-                print(f"✅ Archivo soportado")  # Debug
-                # Abrir archivo en el editor
-                print(f"🔍 Intentando abrir archivo: {file_path}")  # Debug
                 if hasattr(self.parent_editor, 'load_file_content'):
-                    print("✅ Método load_file_content encontrado")  # Debug
-                    result = self.parent_editor.load_file_content(file_path)
-                    if result:
-                        print("✅ Archivo cargado exitosamente")  # Debug
-                    else:
-                        print("❌ Error al cargar archivo")  # Debug
+                    self.parent_editor.load_file_content(file_path)
                 else:
-                    print("❌ Método load_file_content no encontrado")  # Debug
-                    # Fallback: intentar abrir con el sistema
                     try:
                         QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))
                     except Exception as e:
                         QMessageBox.warning(self, "Error", f"No se pudo abrir el archivo:\n{str(e)}")
-            else:
-                print(f"❌ Archivo no soportado: {file_path}")  # Debug
         elif os.path.isdir(file_path):
-            print(f"📁 Es un directorio, navegando...")  # Debug
-            # Para directorios, navegar dentro de la carpeta (cambiar directorio raíz)
             self.navigate_to_directory(file_path)
-        else:
-            print(f"❌ Ruta no válida: {file_path}")  # Debug
     
     def _on_item_collapsed(self, item):
         """Actualiza el icono de carpeta al contraer."""
@@ -3001,8 +2990,7 @@ class FileExplorerWidget(QTreeWidget):
         current_item = self.currentItem()
         
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
-            # Enter para abrir archivo o expandir carpeta
-            if current_item:
+            if current_item and current_item.data(0, Qt.ItemDataRole.UserRole):
                 self.open_file(current_item)
         elif event.key() == Qt.Key.Key_Right:
             # Flecha derecha para expandir carpeta
@@ -3020,8 +3008,7 @@ class FileExplorerWidget(QTreeWidget):
             # F5 para actualizar
             if current_item:
                 file_path = current_item.data(0, Qt.ItemDataRole.UserRole)
-                if os.path.isdir(file_path):
-                    # Limpiar hijos y recargar
+                if file_path and os.path.isdir(file_path):
                     current_item.takeChildren()
                     self._load_directory_contents(current_item, file_path)
         else:
@@ -3031,6 +3018,7 @@ class FileExplorerWidget(QTreeWidget):
     def show_context_menu(self, position):
         """Muestra el menú contextual"""
         item = self.itemAt(position)
+        file_path = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         
         menu = QMenu(self)
         menu.setStyleSheet("""
@@ -3051,35 +3039,29 @@ class FileExplorerWidget(QTreeWidget):
             }
         """)
         
-        if item:
-            file_path = item.data(0, Qt.ItemDataRole.UserRole)
+        if item and file_path and os.path.isfile(file_path):
+            open_action = menu.addAction("📖 Abrir archivo")
+            open_action.triggered.connect(lambda: self.open_file(item))
             
-            if os.path.isfile(file_path):
-                # Menú para archivos
-                open_action = menu.addAction("📖 Abrir archivo")
-                open_action.triggered.connect(lambda: self.open_file(item))
-                
-                menu.addSeparator()
-                delete_action = menu.addAction("🗑️ Eliminar archivo")
-                delete_action.triggered.connect(lambda: self.delete_file(file_path))
-                
-            elif os.path.isdir(file_path):
-                # Menú para directorios
-                new_file_action = menu.addAction("📄 Nuevo archivo...")
-                new_file_action.triggered.connect(lambda: self.create_new_file(file_path))
-                
-                new_folder_action = menu.addAction("📁 Nueva carpeta...")
-                new_folder_action.triggered.connect(lambda: self.create_new_folder(file_path))
-                
-                menu.addSeparator()
-                refresh_action = menu.addAction("🔄 Actualizar")
-                refresh_action.triggered.connect(lambda: self.refresh_directory(item, file_path))
-                
-                menu.addSeparator()
-                delete_action = menu.addAction("🗑️ Eliminar carpeta")
-                delete_action.triggered.connect(lambda: self.delete_folder(file_path))
+            menu.addSeparator()
+            delete_action = menu.addAction("🗑️ Eliminar archivo")
+            delete_action.triggered.connect(lambda: self.delete_file(file_path))
+            
+        elif item and file_path and os.path.isdir(file_path):
+            new_file_action = menu.addAction("📄 Nuevo archivo...")
+            new_file_action.triggered.connect(lambda: self.create_new_file(file_path))
+            
+            new_folder_action = menu.addAction("📁 Nueva carpeta...")
+            new_folder_action.triggered.connect(lambda: self.create_new_folder(file_path))
+            
+            menu.addSeparator()
+            refresh_action = menu.addAction("🔄 Actualizar")
+            refresh_action.triggered.connect(lambda: self.refresh_directory(item, file_path))
+            
+            menu.addSeparator()
+            delete_action = menu.addAction("🗑️ Eliminar carpeta")
+            delete_action.triggered.connect(lambda: self.delete_folder(file_path))
         else:
-            # Menú para área vacía
             new_file_action = menu.addAction("📄 Nuevo archivo...")
             new_file_action.triggered.connect(lambda: self.create_new_file(self.current_root_path))
             
@@ -3869,6 +3851,8 @@ class PythonCodeEditor(QPlainTextEdit):
     
     def on_text_changed_syntax(self):
         """Maneja cambios en el texto para verificación de sintaxis"""
+        if getattr(self, "syntax_check_enabled", True) is False:
+            return
         # Reiniciar el timer para verificación
         self.syntax_check_timer.stop()
         self.syntax_check_timer.start()
@@ -3879,6 +3863,8 @@ class PythonCodeEditor(QPlainTextEdit):
     
     def check_syntax(self):
         """Inicia la verificación de sintaxis en el hilo separado"""
+        if getattr(self, "syntax_check_enabled", True) is False:
+            return
         code = self.toPlainText()
         if code.strip():  # Solo verificar si hay código
             self.syntax_checker.set_code(code, level="fast")
@@ -3887,6 +3873,8 @@ class PythonCodeEditor(QPlainTextEdit):
 
     def check_syntax_full(self):
         """Chequeo pesado (unused imports/vars + heurísticas), solo en documentos pequeños/medianos."""
+        if getattr(self, "syntax_check_enabled", True) is False:
+            return
         try:
             code = self.toPlainText()
             if not code.strip():
@@ -3998,6 +3986,80 @@ class TabbedCodeEditor(QTabWidget):
         
         # Crear la primera pestaña
         self.new_tab()
+
+    def _configure_editor_for_path(self, editor, file_path):
+        """Ajusta el editor según el tipo de archivo."""
+        ext = os.path.splitext(file_path or "")[1].lower()
+        editor.syntax_check_enabled = ext in (".py", ".pyw", ".pyi", "")
+
+    def _wrap_tab_widget(self, editor, file_path):
+        """Devuelve el widget contenedor de la pestaña (editor solo o editor+preview)."""
+        if is_markdown_path(file_path):
+            container = MarkdownEditorTab(editor, preview_visible=False)
+            editor.textChanged.connect(container.schedule_preview_update)
+            if self.parent_editor and hasattr(self.parent_editor, "_update_markdown_preview_action"):
+                container.visibilityChanged.connect(self.parent_editor._update_markdown_preview_action)
+            return container
+        return editor
+
+    def _index_for_editor(self, editor) -> int:
+        """Localiza la pestaña que contiene un editor (robusto ante cierres/reorden)."""
+        for i in range(self.count()):
+            if get_editor_widget(self.widget(i)) is editor:
+                return i
+        return -1
+
+    def _tab_display_name(self, tab_index: int) -> str:
+        tab_data = self.tab_data.get(tab_index)
+        if tab_data and tab_data.file_path:
+            return os.path.basename(tab_data.file_path)
+        return self.tabText(tab_index).lstrip("• ").strip()
+
+    def _connect_editor_signals(self, tab_index, editor, container):
+        del tab_index, container  # la pestaña se resuelve por sender()
+        editor.textChanged.connect(self._on_editor_text_changed)
+
+    def _on_editor_text_changed(self):
+        editor = self.sender()
+        if editor is None:
+            return
+        tab_index = self._index_for_editor(editor)
+        if tab_index < 0:
+            return
+        self.on_content_changed(tab_index)
+        container = self.widget(tab_index)
+        if isinstance(container, MarkdownEditorTab):
+            container.schedule_preview_update()
+
+    def _convert_tab_to_markdown_if_needed(self, tab_index):
+        """Tras guardar como .md, añade el panel de previsualización si hace falta."""
+        tab_data = self.tab_data.get(tab_index)
+        if not tab_data or not is_markdown_path(tab_data.file_path):
+            return
+        container = self.widget(tab_index)
+        if isinstance(container, MarkdownEditorTab):
+            if container.is_preview_visible():
+                container.update_preview()
+            return
+
+        editor = get_editor_widget(container)
+        if editor is None:
+            return
+
+        tab_name = self.tabText(tab_index)
+        tooltip = self.tabToolTip(tab_index)
+        new_container = MarkdownEditorTab(editor, preview_visible=False)
+        editor.textChanged.connect(new_container.schedule_preview_update)
+        if self.parent_editor and hasattr(self.parent_editor, "_update_markdown_preview_action"):
+            new_container.visibilityChanged.connect(self.parent_editor._update_markdown_preview_action)
+
+        self.removeTab(tab_index)
+        new_index = self.insertTab(tab_index, new_container, tab_name)
+        self.setTabToolTip(new_index, tooltip)
+        self.tab_data[new_index] = tab_data
+        if tab_index != new_index and tab_index in self.tab_data:
+            del self.tab_data[tab_index]
+        self.setCurrentIndex(new_index)
     
     def new_tab(self, file_path=None, content=""):
         """Crea una nueva pestaña con un editor"""
@@ -4018,6 +4080,7 @@ class TabbedCodeEditor(QTabWidget):
         # Configurar resaltado de sintaxis con soporte para errores y temas
         syntax_highlighter = SyntaxHighlighterWithErrors(editor.document(), theme_settings)
         editor.syntax_highlighter = syntax_highlighter  # Guardar referencia en el editor
+        self._configure_editor_for_path(editor, file_path)
         
         # Aplicar contenido si se proporciona
         if content:
@@ -4032,16 +4095,18 @@ class TabbedCodeEditor(QTabWidget):
             tab_name = f"Nuevo {tab_count}"
             tooltip = "Archivo sin guardar"
         
+        tab_widget = self._wrap_tab_widget(editor, file_path)
+
         # Agregar la pestaña
-        tab_index = self.addTab(editor, tab_name)
+        tab_index = self.addTab(tab_widget, tab_name)
         self.setTabToolTip(tab_index, tooltip)
         
         # Almacenar datos de la pestaña
         tab_data = TabData(file_path, content, False)
+        tab_data.original_content = editor.toPlainText()
         self.tab_data[tab_index] = tab_data
         
-        # Conectar señal de modificación del contenido
-        editor.textChanged.connect(lambda: self.on_content_changed(tab_index))
+        self._connect_editor_signals(tab_index, editor, tab_widget)
         
         # Hacer activa la nueva pestaña
         self.setCurrentIndex(tab_index)
@@ -4050,26 +4115,31 @@ class TabbedCodeEditor(QTabWidget):
     
     def close_tab(self, index):
         """Cierra una pestaña con confirmación si hay cambios sin guardar"""
-        if index in self.tab_data and self.tab_data[index].is_modified:
-            # Hay cambios sin guardar, pedir confirmación
+        if index < 0 or index >= self.count():
+            return
+
+        tab_data = self.tab_data.get(index)
+        if tab_data and tab_data.is_modified:
+            name = self._tab_display_name(index)
             reply = QMessageBox.question(
                 self,
-                "Archivo Modificado",
-                f"El archivo '{self.tabText(index)}' tiene cambios sin guardar.\n\n¿Desea guardar antes de cerrar?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                "Cambios sin guardar",
+                f"El archivo «{name}» tiene cambios sin guardar.\n\n"
+                "Si cierra la pestaña ahora, se perderán.\n\n"
+                "¿Desea guardar los cambios?",
                 QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
             )
-            
+
             if reply == QMessageBox.StandardButton.Save:
-                # Guardar archivo
-                if self.save_current_tab():
+                if self.save_tab(index):
                     self._close_tab(index)
-            elif reply == QMessageBox.StandardButton.Discard:
-                # Descartar cambios
+            elif reply == QMessageBox.StandardButton.No:
                 self._close_tab(index)
-            # Si es Cancel, no hacer nada
+            # Cancelar: no cerrar
         else:
-            # No hay cambios, cerrar directamente
             self._close_tab(index)
     
     def _close_tab(self, index):
@@ -4099,7 +4169,9 @@ class TabbedCodeEditor(QTabWidget):
         if tab_index not in self.tab_data:
             return
         
-        editor = self.widget(tab_index)
+        editor = get_editor_widget(self.widget(tab_index))
+        if not editor:
+            return
         current_content = editor.toPlainText()
         tab_data = self.tab_data[tab_index]
         
@@ -4131,16 +4203,17 @@ class TabbedCodeEditor(QTabWidget):
     def on_tab_changed(self, index):
         """Maneja el cambio de pestaña activa"""
         if index >= 0 and self.parent_editor:
-            # Actualizar la información en el editor principal
             tab_data = self.tab_data.get(index)
             if tab_data and hasattr(self.parent_editor, 'current_file_path'):
                 self.parent_editor.current_file_path = tab_data.file_path
+            if hasattr(self.parent_editor, '_update_execute_button_state'):
+                self.parent_editor._update_execute_button_state()
     
     def get_current_editor(self):
         """Obtiene el editor de la pestaña activa"""
         current_index = self.currentIndex()
         if current_index >= 0:
-            return self.widget(current_index)
+            return get_editor_widget(self.widget(current_index))
         return None
     
     def get_current_file_path(self):
@@ -4180,59 +4253,76 @@ class TabbedCodeEditor(QTabWidget):
     
     def save_current_tab(self):
         """Guarda el contenido de la pestaña actual"""
-        current_index = self.currentIndex()
-        if current_index < 0:
+        return self.save_tab(self.currentIndex())
+
+    def save_tab(self, tab_index: int) -> bool:
+        """Guarda el contenido de la pestaña indicada en su archivo."""
+        if tab_index < 0 or tab_index >= self.count():
             return False
-        
-        editor = self.widget(current_index)
-        tab_data = self.tab_data[current_index]
-        
+        if tab_index not in self.tab_data:
+            return False
+
+        editor = get_editor_widget(self.widget(tab_index))
+        tab_data = self.tab_data[tab_index]
+
+        if not editor:
+            return False
+
         if not tab_data.file_path:
-            # Archivo nuevo, pedir nombre
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Guardar archivo",
                 "",
-                "Archivos Python (*.py);;Todos los archivos (*)"
+                "Archivos Python (*.py);;Markdown (*.md);;Texto (*.txt);;Todos los archivos (*)",
             )
             if not file_path:
                 return False
             tab_data.file_path = file_path
-        
-        # Guardar archivo
+
         try:
             content = editor.toPlainText()
-            
-            # Aplicar formateo automático si está habilitado
-            if hasattr(self, 'parent_editor') and self.parent_editor:
-                content = self.parent_editor._apply_auto_formatting(content)
-            
-            with open(tab_data.file_path, 'w', encoding='utf-8') as file:
+
+            if hasattr(self, "parent_editor") and self.parent_editor:
+                ext = os.path.splitext(tab_data.file_path)[1].lower()
+                if ext in (".py", ".pyw", ".pyi"):
+                    content = self.parent_editor._apply_auto_formatting(content)
+
+            with open(tab_data.file_path, "w", encoding="utf-8") as file:
                 file.write(content)
-            
-            # Actualizar contenido del editor si se formateó
+
             if content != editor.toPlainText():
                 cursor = editor.textCursor()
                 position = cursor.position()
                 editor.setPlainText(content)
                 cursor.setPosition(min(position, len(content)))
                 editor.setTextCursor(cursor)
-            
-            # Actualizar estado
+
             tab_data.original_content = content
             tab_data.is_modified = False
-            self.update_tab_title(current_index)
-            
-            # Actualizar tooltip
-            self.setTabToolTip(current_index, tab_data.file_path)
-            
+            self.update_tab_title(tab_index)
+            self._configure_editor_for_path(editor, tab_data.file_path)
+            self._convert_tab_to_markdown_if_needed(tab_index)
+
+            for i in range(self.count()):
+                if self.tab_data.get(i) is tab_data:
+                    tab_index = i
+                    break
+
+            self.setTabToolTip(tab_index, tab_data.file_path)
+
+            if hasattr(self, "parent_editor"):
+                if hasattr(self.parent_editor, "_update_execute_button_state"):
+                    self.parent_editor._update_execute_button_state()
+                if hasattr(self.parent_editor, "_update_markdown_preview_action"):
+                    self.parent_editor._update_markdown_preview_action()
+
             return True
-            
+
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Error",
-                f"No se pudo guardar el archivo:\n{str(e)}"
+                f"No se pudo guardar el archivo:\n{str(e)}",
             )
             return False
 
@@ -5269,9 +5359,17 @@ class CodeEditorViewPySide:
 ⌨️ ATAJOS IMPORTANTES
 • Ctrl+P → Quick Open (archivos recientes)
 • Ctrl+Shift+P → Command Palette (comandos)
-• Ctrl+Enter → Ejecutar código en Terminal
+• Ctrl+Enter → Ejecutar código en Terminal (solo .py)
+• Ctrl+Shift+V → Vista previa Markdown (solo .md)
+• Ctrl+W → Cerrar pestaña (avisa si hay cambios sin guardar)
 • Ctrl+` → Alternar a la pestaña Terminal
 • Ctrl+Alt+C → Modo Café (pausa: bloquea hasta mover ratón o pulsar tecla)
+
+📝 PESTAÑAS Y MARKDOWN
+• El explorador muestra iconos por tipo de archivo
+• Archivos .md: vista previa opcional con el botón 👁️ o Ctrl+Shift+V
+• .txt y .md no permiten ejecutar código (Ctrl+Enter deshabilitado)
+• Al cerrar una pestaña con cambios: Guardar / No / Cancelar
 
 🔍 SEARCH (sidebar)
 • Resultados clicables + preview del match
@@ -5317,6 +5415,7 @@ class CodeEditorViewPySide:
             if hasattr(self, "tabbed_editor"):
                 self.tabbed_editor.currentChanged.connect(self._on_tab_changed_status)
             self._update_status_position()
+            self._update_execute_button_state()
         except Exception:
             pass
 
@@ -5513,6 +5612,70 @@ class CodeEditorViewPySide:
             self._update_status_position()
             # limpiar highlights de búsqueda al cambiar de pestaña
             self.set_search_highlights([])
+            self._update_execute_button_state()
+            self._update_markdown_preview_action()
+        except Exception:
+            pass
+
+    def toggle_markdown_preview(self):
+        """Muestra u oculta la vista previa del Markdown en la pestaña activa."""
+        try:
+            if not hasattr(self, "tabbed_editor"):
+                return
+            md_tab = get_markdown_tab(self.tabbed_editor.currentWidget())
+            if md_tab:
+                md_tab.toggle_preview()
+        except Exception:
+            pass
+
+    def _set_markdown_preview_visible(self, visible: bool):
+        """Sincroniza la vista previa desde el menú Vista."""
+        try:
+            if not hasattr(self, "tabbed_editor"):
+                return
+            md_tab = get_markdown_tab(self.tabbed_editor.currentWidget())
+            if md_tab and md_tab.is_preview_visible() != visible:
+                md_tab.set_preview_visible(visible)
+        except Exception:
+            pass
+
+    def _update_markdown_preview_action(self):
+        """Actualiza el menú de vista previa según la pestaña activa."""
+        try:
+            if not hasattr(self, "markdown_preview_action"):
+                return
+            md_tab = None
+            if hasattr(self, "tabbed_editor"):
+                md_tab = get_markdown_tab(self.tabbed_editor.currentWidget())
+            is_md = md_tab is not None
+            self.markdown_preview_action.blockSignals(True)
+            self.markdown_preview_action.setEnabled(is_md)
+            if is_md:
+                self.markdown_preview_action.setChecked(md_tab.is_preview_visible())
+            else:
+                self.markdown_preview_action.setChecked(False)
+            self.markdown_preview_action.blockSignals(False)
+        except Exception:
+            pass
+
+    def _update_execute_button_state(self):
+        """Habilita/deshabilita ejecutar código según el tipo de archivo activo."""
+        try:
+            path = None
+            if hasattr(self, "tabbed_editor"):
+                path = self.tabbed_editor.get_current_file_path()
+            executable = is_executable_path(path)
+            if hasattr(self, "execute_terminal_button"):
+                self.execute_terminal_button.setEnabled(executable)
+                if executable:
+                    self.execute_terminal_button.setToolTip("Ejecutar código en el terminal (Ctrl+Enter)")
+                else:
+                    ext = os.path.splitext(path or "")[1].lower()
+                    self.execute_terminal_button.setToolTip(
+                        f"La ejecución no está disponible para archivos {ext or 'de texto'}"
+                    )
+            if hasattr(self, "_execute_shortcut"):
+                self._execute_shortcut.setEnabled(executable)
         except Exception:
             pass
 
@@ -5825,7 +5988,16 @@ class CodeEditorViewPySide:
         toggle_explorer_action.setChecked(True)  # Por defecto visible
         view_menu.addAction(toggle_explorer_action)
         
-        # Separador
+        view_menu.addSeparator()
+
+        self.markdown_preview_action = QAction("👁️ Vista previa Markdown", self.window)
+        self.markdown_preview_action.setShortcut("Ctrl+Shift+V")
+        self.markdown_preview_action.setStatusTip("Mostrar u ocultar la vista previa del archivo Markdown activo")
+        self.markdown_preview_action.setCheckable(True)
+        self.markdown_preview_action.setEnabled(False)
+        self.markdown_preview_action.toggled.connect(self._set_markdown_preview_visible)
+        view_menu.addAction(self.markdown_preview_action)
+        
         view_menu.addSeparator()
         
         # Acción Abrir Terminal del Sistema
@@ -6174,6 +6346,8 @@ class CodeEditorViewPySide:
                 # Actualizar referencia al editor actual
                 self.input_text = self.tabbed_editor.get_current_editor()
                 self.current_file_path = file_path
+                self._update_execute_button_state()
+                self._update_markdown_preview_action()
                 
                 # Actualizar título de ventana
                 filename = os.path.basename(file_path)
@@ -6563,12 +6737,19 @@ class CodeEditorViewPySide:
     def execute_code_in_terminal(self):
         """Ejecuta el código actual en el terminal integrado"""
         try:
-            # Obtener el código del editor actual
+            if hasattr(self, "tabbed_editor"):
+                path = self.tabbed_editor.get_current_file_path()
+                if not is_executable_path(path):
+                    self.show_message(
+                        "Información",
+                        "La ejecución de código no está disponible para archivos .txt o .md.",
+                        "info",
+                    )
+                    return
+
             current_editor = None
-            
-            # Obtener editor actual
-            if hasattr(self, 'tab_widget') and self.tab_widget.count() > 0:
-                current_editor = self.tab_widget.currentWidget()
+            if hasattr(self, 'tabbed_editor'):
+                current_editor = self.tabbed_editor.get_current_editor()
             elif hasattr(self, 'input_text'):
                 current_editor = self.input_text
             
@@ -6628,8 +6809,8 @@ class CodeEditorViewPySide:
         from PySide6.QtGui import QShortcut, QKeySequence
         
         # Ctrl+Enter para ejecutar en terminal (comportamiento unificado)
-        execute_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.window)
-        execute_shortcut.activated.connect(self.execute_code_in_terminal)
+        self._execute_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.window)
+        self._execute_shortcut.activated.connect(self.execute_code_in_terminal)
         
         # Ctrl+L para limpiar
         clear_shortcut = QShortcut(QKeySequence("Ctrl+L"), self.window)
@@ -6656,6 +6837,9 @@ class CodeEditorViewPySide:
         # Modo Café (pausa/bloqueo)
         coffee_shortcut = QShortcut(QKeySequence("Ctrl+Alt+C"), self.window)
         coffee_shortcut.activated.connect(self.toggle_coffee_mode)
+
+        self._markdown_preview_shortcut = QShortcut(QKeySequence("Ctrl+Shift+V"), self.window)
+        self._markdown_preview_shortcut.activated.connect(self.toggle_markdown_preview)
         
         # F3 para buscar siguiente (cuando hay diálogo de búsqueda abierto)
         find_next_shortcut = QShortcut(QKeySequence("F3"), self.window)

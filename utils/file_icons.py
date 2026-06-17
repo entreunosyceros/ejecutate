@@ -170,12 +170,8 @@ def explorer_icon_for_path(path: str) -> QIcon:
 
 @lru_cache(maxsize=2)
 def explorer_folder_icon(opened: bool = False) -> QIcon:
-    kind = (
-        QFileIconProvider.IconType.FolderOpen
-        if opened
-        else QFileIconProvider.IconType.Folder
-    )
-    return _icon_provider.icon(kind)
+    del opened  # Qt 6 no define IconType.FolderOpen
+    return _icon_provider.icon(QFileIconProvider.IconType.Folder)
 
 
 def explorer_icon_size() -> QSize:
