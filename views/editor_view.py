@@ -1821,6 +1821,125 @@ class PreferencesDialog(QDialog):
         self.new_settings = self.current_settings.copy()
         
         self._setup_ui()
+        self._apply_preferences_theme()
+    
+    def _preferences_palette(self):
+        """Colores del diálogo alineados con el tema del editor."""
+        s = self.new_settings
+        bg = s.get("editor_bg_color", "#1E1E1E")
+        text = s.get("editor_text_color", "#D4D4D4")
+        panel = s.get("line_number_bg_color", "#252526")
+        border = "#3F3F46" if self._is_dark_color(bg) else "#DEE2E6"
+        hint = s.get("line_number_text_color", "#858585")
+        return {
+            "bg": bg,
+            "text": text,
+            "panel": panel,
+            "border": border,
+            "hint": hint,
+            "accent": "#0078D4",
+        }
+
+    def _info_panel_stylesheet(self, palette=None):
+        p = palette or self._preferences_palette()
+        return f"""
+            QLabel {{
+                background-color: {p['panel']};
+                color: {p['text']};
+                border: 1px solid {p['border']};
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 11px;
+            }}
+        """
+
+    def _apply_preferences_theme(self):
+        """Aplica al diálogo los colores del tema seleccionado."""
+        p = self._preferences_palette()
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {p['bg']};
+                color: {p['text']};
+            }}
+            QLabel {{
+                color: {p['text']};
+                background-color: transparent;
+            }}
+            QGroupBox {{
+                color: {p['text']};
+                border: 1px solid {p['border']};
+                border-radius: 6px;
+                margin-top: 12px;
+                padding: 12px 8px 8px 8px;
+                background-color: {p['panel']};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 6px;
+            }}
+            QTabWidget::pane {{
+                border: 1px solid {p['border']};
+                background-color: {p['bg']};
+                border-radius: 4px;
+            }}
+            QTabBar::tab {{
+                background-color: {p['panel']};
+                color: {p['text']};
+                padding: 8px 14px;
+                margin-right: 2px;
+                border: 1px solid {p['border']};
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {p['accent']};
+                color: #FFFFFF;
+            }}
+            QComboBox, QSpinBox, QLineEdit {{
+                background-color: {p['panel']};
+                color: {p['text']};
+                border: 1px solid {p['border']};
+                padding: 4px 6px;
+                border-radius: 3px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {p['panel']};
+                color: {p['text']};
+                selection-background-color: {p['accent']};
+            }}
+            QCheckBox {{
+                color: {p['text']};
+                spacing: 6px;
+            }}
+        """)
+        info_ss = self._info_panel_stylesheet(p)
+        hint_ss = f"color: {p['hint']}; background-color: transparent; border: none;"
+        for widget in (
+            getattr(self, "theme_info", None),
+            getattr(self, "engine_info_label", None),
+            getattr(self, "colors_tab_info_label", None),
+            getattr(self, "formatter_install_info", None),
+        ):
+            if widget is not None:
+                widget.setStyleSheet(info_ss)
+        for widget in (
+            getattr(self, "coffee_hint_label", None),
+            getattr(self, "coffee_pomodoro_hint_label", None),
+        ):
+            if widget is not None:
+                widget.setStyleSheet(hint_ss)
+        if hasattr(self, "theme_preview"):
+            self.theme_preview.setStyleSheet(f"""
+                QLabel {{
+                    border: 2px solid {p['border']};
+                    border-radius: 5px;
+                    padding: 10px;
+                    background-color: {p['panel']};
+                    color: {p['text']};
+                }}
+            """)
     
     def _get_default_settings(self):
         """Configuraciones por defecto"""
@@ -1869,7 +1988,7 @@ class PreferencesDialog(QDialog):
         g_layout.addWidget(self.coffee_message_input)
 
         hint = QLabel("Se mostrará en el overlay de pausa (Modo Café).")
-        hint.setStyleSheet("color: #888;")
+        self.coffee_hint_label = hint
         g_layout.addWidget(hint)
 
         layout.addWidget(group)
@@ -1916,7 +2035,7 @@ class PreferencesDialog(QDialog):
             "temporizador con el tiempo restante de descanso."
         )
         pomodoro_hint.setWordWrap(True)
-        pomodoro_hint.setStyleSheet("color: #888;")
+        self.coffee_pomodoro_hint_label = pomodoro_hint
         p_layout.addWidget(pomodoro_hint)
 
         layout.addWidget(pomodoro_group)
@@ -1964,13 +2083,6 @@ class PreferencesDialog(QDialog):
         # Crear una vista previa visual
         self.theme_preview = QLabel()
         self.theme_preview.setFixedHeight(200)
-        self.theme_preview.setStyleSheet("""
-            QLabel {
-                border: 2px solid #BDC3C7;
-                border-radius: 5px;
-                padding: 10px;
-            }
-        """)
         
         preview_layout.addWidget(self.theme_preview)
         layout.addWidget(preview_group)
@@ -1982,15 +2094,6 @@ class PreferencesDialog(QDialog):
         
         self.theme_info = QLabel()
         self.theme_info.setWordWrap(True)
-        self.theme_info.setStyleSheet("""
-            QLabel {
-                background-color: #F8F9FA;
-                border: 1px solid #DEE2E6;
-                border-radius: 3px;
-                padding: 10px;
-                font-size: 11px;
-            }
-        """)
         
         info_layout.addWidget(self.theme_info)
         layout.addWidget(info_group)
@@ -2019,6 +2122,7 @@ class PreferencesDialog(QDialog):
             
             # Actualizar vista previa
             self._update_theme_preview()
+            self._apply_preferences_theme()
             
             # Aplicar vista previa automáticamente
             self._apply_preview()
@@ -2090,8 +2194,10 @@ class PreferencesDialog(QDialog):
             }
             
             description = theme_descriptions.get(current_theme, "Tema personalizado.")
+            text_color = theme["editor_text_color"]
             
             self.theme_info.setText(f"""
+<div style="color: {text_color};">
 <b>Tema: {current_theme}</b><br><br>
 {description}<br><br>
 <b>Características:</b><br>
@@ -2101,6 +2207,7 @@ class PreferencesDialog(QDialog):
 • Palabras clave: {theme['syntax_keyword_color']}<br>
 • Strings: {theme['syntax_string_color']}<br>
 • Comentarios: {theme['syntax_comment_color']}
+</div>
             """)
     
     def _setup_ui(self):
@@ -2372,15 +2479,7 @@ al hacer clic en "Vista Previa" o "Aceptar". Puedes usar "Restablecer"
 para volver a los colores predeterminados.
         """)
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("""
-            QLabel {
-                background-color: #EBF5FB;
-                border: 1px solid #3498DB;
-                border-radius: 5px;
-                padding: 10px;
-                margin: 10px 0;
-            }
-        """)
+        self.colors_tab_info_label = info_label
         layout.addWidget(info_label)
         
         layout.addStretch()
@@ -2439,15 +2538,6 @@ para volver a los colores predeterminados.
         # Información del motor
         self.engine_info_label = QLabel()
         self.engine_info_label.setWordWrap(True)
-        self.engine_info_label.setStyleSheet("""
-            QLabel {
-                background-color: #F8F9FA;
-                border: 1px solid #DEE2E6;
-                border-radius: 3px;
-                padding: 8px;
-                font-size: 11px;
-            }
-        """)
         self._update_engine_info()
         engine_layout.addWidget(self.engine_info_label)
         
@@ -2524,15 +2614,7 @@ para volver a los colores predeterminados.
 Instalar desde terminal: pip install autopep8 black isort
         """)
         install_info.setWordWrap(True)
-        install_info.setStyleSheet("""
-            QLabel {
-                background-color: #EBF5FB;
-                border: 1px solid #3498DB;
-                border-radius: 5px;
-                padding: 8px;
-                font-size: 11px;
-            }
-        """)
+        self.formatter_install_info = install_info
         install_layout.addWidget(install_info)
         
         layout.addWidget(install_group)
@@ -2560,10 +2642,12 @@ Instalar desde terminal: pip install autopep8 black isort
         info_texts = [
             "<b>Manual (Básico):</b><br>• Formateo básico integrado<br>• Ajuste de indentación y espaciado<br>• Organización simple de imports<br>• No requiere dependencias externas",
             "<b>autopep8 (Recomendado):</b><br>• Formateo automático según PEP 8<br>• Corrección de errores de estilo<br>• Configuración flexible<br>• Requiere: pip install autopep8",
-            "<b>black (Estricto):</b><br>• Formateo muy estricto y consistente<br>• Sin configuración (opinionated)<br>• Usado por muchos proyectos de Python<br>• Requiere: pip install black"
+            "<b>black (Estricto):</b><br>• Formateo muy estricto y consistente<br>• Sin configuración (opinionated)<br>• Usado por muchos proyectos de Python<br>• Requiere: pip install black",
         ]
-        
-        self.engine_info_label.setText(info_texts[engine_index])
+        text_color = self.new_settings.get("editor_text_color", "#D4D4D4")
+        self.engine_info_label.setText(
+            f'<div style="color: {text_color};">{info_texts[engine_index]}</div>'
+        )
     
     def _test_formatter(self):
         """Prueba el formatter con código de ejemplo"""
@@ -2593,7 +2677,24 @@ def calcular(precio,descuento):
         # Crear diálogo para mostrar resultado
         dialog = QDialog(self)
         dialog.setWindowTitle("Prueba del Formatter")
-        dialog.setFixedSize(700, 550)  # Aumentado un poco para mejor visibilidad
+        dialog.setFixedSize(700, 550)
+        p = self._preferences_palette()
+        dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {p['bg']}; color: {p['text']}; }}
+            QLabel {{ color: {p['text']}; }}
+            QTextEdit {{
+                background-color: {p['panel']};
+                color: {p['text']};
+                border: 1px solid {p['border']};
+            }}
+            QPushButton {{
+                background-color: {p['accent']};
+                color: #FFFFFF;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }}
+        """)
         
         layout = QVBoxLayout(dialog)
         
@@ -2667,6 +2768,7 @@ def calcular(precio,descuento):
         if color.isValid():
             self.new_settings[setting_key] = color.name()
             self._update_color_button(button, color.name())
+            self._apply_preferences_theme()
     
     def _update_color_button(self, button, color):
         """Actualiza el botón con el color seleccionado"""
@@ -2691,6 +2793,7 @@ def calcular(precio,descuento):
     def _apply_preview(self):
         """Aplica una vista previa de los cambios"""
         self._update_new_settings()
+        self._apply_preferences_theme()
         if hasattr(self.parent_editor, 'apply_preferences'):
             # Para vista previa, aplicar pero no guardar permanentemente
             self.parent_editor.apply_preferences(self.new_settings, preview=True)
@@ -2727,6 +2830,8 @@ def calcular(precio,descuento):
             )
         
         # Aplicar vista previa de los valores por defecto
+        self._apply_preferences_theme()
+        self._update_theme_preview()
         self._apply_preview()
     
     def _update_new_settings(self):
