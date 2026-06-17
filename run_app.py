@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script para ejecutar el Editor de Código Python Ejecútate!
+Script para ejecutar Ejecútate!
 Maneja automáticamente el entorno virtual y dependencias
 """
 
@@ -61,7 +61,7 @@ def run_app_with_venv():
     script_dir = Path(__file__).parent
     main_path = script_dir / "main.py"
 
-    print("🚀 Iniciando Editor de código Python Ejecútate! (usando .venv)...")
+    print("🚀 Iniciando Ejecútate! (usando .venv)...")
     try:
         # Ejecutar con el intérprete del venv evita depender del python del sistema/conda
         proc = subprocess.run(

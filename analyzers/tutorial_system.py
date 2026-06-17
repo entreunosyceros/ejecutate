@@ -5,7 +5,12 @@ Ahora usa configuración externa para fácil mantenimiento
 """
 
 from typing import List, Dict, Any, Optional
-from tutorials_config import get_tutorials_config, validate_tutorial_code
+from tutorials_config import (
+    get_tutorials_config,
+    validate_tutorial_code,
+    get_difficulty_order,
+    DIFFICULTY_HEADERS,
+)
 
 
 class TutorialManager:
@@ -29,6 +34,7 @@ class TutorialManager:
                 'title': tutorial_config['title'],
                 'description': tutorial_config['description'],
                 'difficulty': tutorial_config['difficulty'],
+                'sort_order': tutorial_config.get('sort_order', 99),
                 'steps': tutorial_config['steps'],
                 'steps_count': len(tutorial_config['steps'])
             }
@@ -40,6 +46,14 @@ class TutorialManager:
         Returns:
             List[Dict]: Lista de tutoriales con información básica
         """
+        sorted_tutorials = sorted(
+            self.tutorials.values(),
+            key=lambda t: (
+                get_difficulty_order(t['difficulty']),
+                t.get('sort_order', 99),
+                t['title'].lower(),
+            ),
+        )
         return [
             {
                 'id': tutorial['id'],
@@ -48,7 +62,7 @@ class TutorialManager:
                 'difficulty': tutorial['difficulty'],
                 'steps_count': tutorial['steps_count']
             }
-            for tutorial in self.tutorials.values()
+            for tutorial in sorted_tutorials
         ]
     
     def start_tutorial(self, tutorial_id: str) -> bool:

@@ -5,7 +5,7 @@
 
 ## Layout
 
-- **Barra superior**: título **Ejecútalo!**, ruta de la carpeta de trabajo del explorador y botón **☕** (Modo Café)
+- **Barra superior**: título **Ejecútate!**, ruta de la carpeta de trabajo del explorador y botón **☕** (Modo Café)
 - **Activity Bar** (izquierda): Explorer / Search / Problems / Outline / Aprendizaje / Terminal / Settings
 - **Sidebar**: pestañas **Explorer**, **Search**, **Problems**, **Outline** y **Aprendizaje**
 - **Editor**: pestañas de archivos (indicador `•` si hay cambios sin guardar)
@@ -32,7 +32,16 @@ Detalle del comportamiento de pestañas y explorador: [Archivos, pestañas y exp
 - **Search**: panel embebido con resultados clicables y reemplazo
 - **Problems**: lista clicable de errores/warnings (salta a Ln/Col) + contador (badge) en el icono
 - **Outline**: símbolos del archivo Python (clases/funciones) con salto a línea
-- **Aprendizaje**: accesos a Tutoriales/Debugger/Paquetes/Análisis (F4–F7)
+- **Aprendizaje**: accesos rápidos a Tutoriales (F4), Debugger (F5), Paquetes (F6) y Análisis (F7)
+
+  | Botón | Atajo | Contenido |
+  |-------|-------|-----------|
+  | Tutoriales | F4 | 17 tutoriales por nivel (Principiante → Experto) |
+  | Debugger | F5 | Ejecución paso a paso |
+  | Paquetes | F6 | Catálogo ~48 librerías con filtro e instalación |
+  | Análisis | F7 | Sugerencias en tiempo real |
+
+  Más detalle: [Sistema educativo](./education.md).
 
 ## Pestañas del editor
 

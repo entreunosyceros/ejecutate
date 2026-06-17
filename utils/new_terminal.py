@@ -69,6 +69,10 @@ class IntegratedTerminalNew(QWidget):
         self.exec_mode_combo = QComboBox()
         self.exec_mode_combo.addItem("⚡ Limpio", "clean")
         self.exec_mode_combo.addItem("🧪 Interactivo", "interactive")
+        self.exec_mode_combo.setToolTip(
+            "Solo afecta a comandos escritos a mano en la caja del terminal. "
+            "El botón «Ejecutar Código» del editor siempre lanza el programa completo."
+        )
 
         # Auto-detect persistente
         self.auto_detect_checkbox = QCheckBox("🧠 Auto-detect")
@@ -77,7 +81,10 @@ class IntegratedTerminalNew(QWidget):
             self.auto_detect_checkbox.setChecked(settings.value("terminal/auto_detect", True, type=bool))
         except Exception:
             self.auto_detect_checkbox.setChecked(True)
-        self.auto_detect_checkbox.setToolTip("Detectar automáticamente código interactivo (input) y cambiar al modo adecuado")
+        self.auto_detect_checkbox.setToolTip(
+            "Solo para la caja de comandos del terminal. "
+            "No cambia cómo funciona «Ejecutar Código» en el editor."
+        )
         self.auto_detect_checkbox.stateChanged.connect(self._persist_auto_detect)
 
         # Precaptura
@@ -442,23 +449,240 @@ class IntegratedTerminalNew(QWidget):
         """Verifica si el terminal está ejecutándose"""
         return self.process and self.process.state() == QProcess.ProcessState.Running
 
-    # --- Compatibilidad con interfaz anterior ---
-    def execute_code_from_editor(self, code: str):
-        """Ejecuta código Python según modo seleccionado.
+    def _looks_like_standalone_script(self, code: str) -> bool:
+        """Detecta scripts que deben ejecutarse como archivo, no en el REPL línea a línea."""
+        import re
+        if not code or not code.strip():
+            return False
+        if "__file__" in code:
+            return True
+        if re.search(r"""if\s+__name__\s*==\s*(['"])__main__\1""", code):
+            return True
+        if code.lstrip().startswith("#!"):
+            return True
+        if len(re.findall(r"^def \w+\(", code, re.MULTILINE)) >= 2:
+            return True
+        if len(code.splitlines()) > 35:
+            return True
+        return False
 
-        Modos:
-        - clean: ejecuta en subprocess y solo muestra stdout/stderr
-        - interactive: envía el código al REPL embebido (prompts visibles)
+    def _materialize_script_file(
+        self,
+        code: str,
+        file_path: str | None,
+        cwd: str | None,
+        *,
+        as_program: bool = False,
+    ) -> tuple[str | None, str | None]:
+        """Resuelve la ruta del script a ejecutar (guardado o temporal)."""
+        run_cwd = cwd
+        if file_path:
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in (".py", ".pyw", ".pyi") and os.path.isfile(file_path):
+                run_file = os.path.abspath(file_path)
+                if not run_cwd:
+                    run_cwd = os.path.dirname(run_file)
+                return run_file, run_cwd
+        if as_program or self._looks_like_standalone_script(code):
+            directory = run_cwd if run_cwd and os.path.isdir(run_cwd) else os.getcwd()
+            import tempfile
+            fd, path = tempfile.mkstemp(suffix=".py", prefix="_ejecutalo_", dir=directory)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(code)
+            except Exception:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+                raise
+            if not run_cwd:
+                run_cwd = directory
+            return path, run_cwd
+        return None, run_cwd
+
+    def _is_python_repl_shell(self) -> bool:
+        shell_data = self.shell_combo.currentData()
+        if not isinstance(shell_data, str):
+            return False
+        if shell_data == sys.executable:
+            return True
+        return os.path.basename(shell_data).lower().startswith("python")
+
+    def _bash_combo_index(self) -> int | None:
+        for i in range(self.shell_combo.count()):
+            data = self.shell_combo.itemData(i)
+            if data in ("/bin/bash", "/usr/bin/bash"):
+                return i
+        return None
+
+    def _run_program_in_embedded_shell(
+        self,
+        run_file: str,
+        run_cwd: str | None,
+        *,
+        python_exe: str | None = None,
+    ) -> bool:
+        """Lanza un .py en el shell integrado para que stdin siga conectado (TUI, input, Rich)."""
+        import shlex
+
+        run_file = os.path.abspath(run_file)
+        cwd = run_cwd or os.path.dirname(run_file) or os.getcwd()
+        py = python_exe or sys.executable
+        ctx = {"run_file": run_file, "cwd": cwd, "py": py}
+
+        def launch():
+            if not self.process or self.process.state() != QProcess.ProcessState.Running:
+                self.start_terminal()
+                QTimer.singleShot(900, launch)
+                return
+
+            self.terminal_output.setTextColor(QColor("#87CEEB"))
+            self.terminal_output.append(f"\n▶ Ejecutando programa: {ctx['run_file']}")
+            self.terminal_output.setTextColor(QColor("#FFFFFF"))
+            self.terminal_output.append(
+                "   Si el programa pide datos, escríbelos en la caja inferior y pulsa Enter.\n"
+            )
+
+            command = (
+                f"cd {shlex.quote(ctx['cwd'])} && "
+                f"{shlex.quote(ctx['py'])} -u {shlex.quote(ctx['run_file'])}\n"
+            )
+            self.process.write(command.encode("utf-8"))
+            self.command_input.setFocus()
+            self.status_label.setText("⚡ Programa en ejecución — usa la caja inferior")
+            self.status_label.setStyleSheet("color: #F39C12; font-weight: bold;")
+
+            scrollbar = self.terminal_output.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+
+        def prepare():
+            bash_idx = self._bash_combo_index()
+            if self._is_python_repl_shell() and bash_idx is not None:
+                if self.shell_combo.currentIndex() != bash_idx:
+                    self.shell_combo.setCurrentIndex(bash_idx)
+                    QTimer.singleShot(900, launch)
+                    return
+            if not self.process or self.process.state() != QProcess.ProcessState.Running:
+                self.start_terminal()
+                QTimer.singleShot(900, launch)
+                return
+            launch()
+
+        prepare()
+        return True
+
+    def _run_code_subprocess(
+        self,
+        code: str,
+        run_file: str | None,
+        run_cwd: str | None,
+        *,
+        file_path: str | None = None,
+    ) -> bool:
+        """Ejecuta código en subprocess sin bloquear la interfaz."""
+        import subprocess
+        import sys
+        import threading
+        import queue
+
+        def _safe_log(msg, color="#8888FF"):
+            try:
+                self.terminal_output.setTextColor(QColor(color))
+                self.terminal_output.append(msg)
+                self.terminal_output.setTextColor(QColor("#FFFFFF"))
+            except Exception:
+                pass
+
+        code_to_run = code.rstrip("\n") + "\n"
+        result_q = queue.Queue()
+
+        def worker():
+            try:
+                popen_kwargs = {
+                    "stdin": subprocess.PIPE,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.PIPE,
+                    "text": True,
+                }
+                if run_cwd and os.path.isdir(run_cwd):
+                    popen_kwargs["cwd"] = run_cwd
+                if run_file:
+                    proc = subprocess.Popen(
+                        [sys.executable, "-u", run_file],
+                        **popen_kwargs,
+                    )
+                else:
+                    proc = subprocess.Popen(
+                        [sys.executable, "-u", "-c", code_to_run],
+                        **popen_kwargs,
+                    )
+                stdout, stderr = proc.communicate(input="")
+                result_q.put((stdout, stderr, proc.returncode, False))
+            except Exception as e:
+                result_q.put(("", f"Error ejecución: {e}", -1, False))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        if run_file:
+            _safe_log(f"▶ Ejecutando script: {run_file}", "#87CEEB")
+        elif run_cwd:
+            _safe_log(f"▶ Directorio de trabajo: {run_cwd}", "#666666")
+
+        def poll_result():
+            if not result_q.empty():
+                stdout, stderr, returncode, _timed_out = result_q.get()
+                if "EOF when reading a line" in (stderr or "") or "EOFError" in (stderr or ""):
+                    self.terminal_output.setTextColor(QColor("#F1C40F"))
+                    self.terminal_output.append(
+                        "⚠️ El programa necesita entrada interactiva. "
+                        "Vuelve a ejecutar: ahora se lanzará en el terminal integrado "
+                        "y podrás escribir en la caja inferior."
+                    )
+                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
+
+                if stdout:
+                    self.terminal_output.setTextColor(QColor("#00FF00"))
+                    self.terminal_output.append(stdout.rstrip("\n"))
+                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
+                if stderr:
+                    self.terminal_output.setTextColor(QColor("#FF5555"))
+                    self.terminal_output.append(stderr.rstrip("\n"))
+                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
+                if returncode != 0 and not stderr:
+                    self.terminal_output.setTextColor(QColor("#FF5555"))
+                    self.terminal_output.append(f"(exit code {returncode})")
+                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
+                scrollbar = self.terminal_output.verticalScrollBar()
+                scrollbar.setValue(scrollbar.maximum())
+                return
+            QTimer.singleShot(120, poll_result)
+
+        poll_result()
+        return True
+
+    # --- Compatibilidad con interfaz anterior ---
+    def execute_code_from_editor(self, code: str, file_path: str | None = None, cwd: str | None = None):
+        """Ejecuta todo el contenido del editor como un programa Python.
+
+        Siempre lanza el programa completo en el shell integrado (stdin conectado).
+        Solo la precaptura de input() usa subprocess aislado.
         """
         try:
             # Asegurar ejecución en hilo GUI
             try:
-                from PySide6.QtCore import QCoreApplication, QThread, QMetaObject, Qt as _Qt
+                from PySide6.QtCore import QCoreApplication, QThread
                 app = QCoreApplication.instance()
                 if app and QThread.currentThread() is not app.thread():
-                    # Re-dispatch completo en hilo GUI
                     code_copy = str(code)
-                    QMetaObject.invokeMethod(self, lambda: self.execute_code_from_editor(code_copy), _Qt.QueuedConnection)
+                    fp_copy = file_path
+                    cwd_copy = cwd
+                    QTimer.singleShot(
+                        0,
+                        lambda c=code_copy, fp=fp_copy, cw=cwd_copy: self.execute_code_from_editor(
+                            c, file_path=fp, cwd=cw
+                        ),
+                    )
                     return True
             except Exception:
                 pass
@@ -473,195 +697,56 @@ class IntegratedTerminalNew(QWidget):
                 except Exception:
                     pass
 
-            # Disparo temprano de precaptura (independiente de auto-detect) si modo limpio
-            # Resolver modo actual de forma robusta (userData o texto visible)
-            current_mode = 'clean'
-            if hasattr(self, 'exec_mode_combo'):
-                try:
-                    data = self.exec_mode_combo.currentData()
-                    if data:
-                        current_mode = data
-                    else:
-                        txt = self.exec_mode_combo.currentText().lower()
-                        if 'inter' in txt:
-                            current_mode = 'interactive'
-                except Exception:
-                    pass
-
-            # Detección temprana de necesidad de precaptura (regex rápida)
             import re
-            has_input_call = re.search(r'\binput\s*\(', code) is not None or 'getpass(' in code or 'stdin.readline' in code
-            # Fallback temprano si GUI logging falló y estamos en modo limpio: ejecutar con placeholders para no bloquear
-            if current_mode == 'clean' and has_input_call and not hasattr(self, 'terminal_output'):
-                # Conteo rápido de inputs
-                count_inputs = len(re.findall(r'\binput\s*\(', code)) or 1
-                placeholders = ['0'] * count_inputs
-                placeholder_wrapper = ['__ejecutate_inputs = iter(['] + [f"    {repr(v)}," for v in placeholders] + ['])','def input(prompt=None):','    try:','        val = next(__ejecutate_inputs)','    except StopIteration:','        val = ""','    if prompt: print(prompt, end="")','    return val','']
-                final_code = "\n".join(placeholder_wrapper) + code
-                import subprocess, sys
-                proc = subprocess.run([sys.executable,'-u','-c',final_code], capture_output=True, text=True, timeout=3)
-                print(proc.stdout, end='')
-                print(proc.stderr, end='', file=sys.stderr)
-                return True
-            if current_mode == 'clean':
-                prec = getattr(self, 'precapture_checkbox', None)
-                if prec and prec.isChecked() and has_input_call:
-                    if getattr(self, '_precapturing', False):
-                        self.terminal_output.append("(info) Precaptura ya en curso...")
-                    else:
-                        def launch_precapture():
-                            self._precapturing = True
-                            _safe_log("🔍 Precaptura: se detectó input() en modo limpio. Mostrando diálogo.", "#87CEEB")
-                            ok_local = self._pre_capture_and_run(code)
-                            self._precapturing = False
-                            return ok_local
-                        # Invocar en hilo GUI seguro
-                        try:
-                            from PySide6.QtCore import QMetaObject, Qt as _Qt
-                            QMetaObject.invokeMethod(self, lambda: launch_precapture(), _Qt.QueuedConnection)
-                            return True
-                        except Exception:
-                            ok = launch_precapture()
-                            if ok:
-                                return True
-
-            auto_detect = getattr(self, 'auto_detect_checkbox', None)
-            needs_interactive = False
-            if not auto_detect or auto_detect.isChecked():
-                # Normalizar para análisis (minúsculas)
-                norm_code = code.lower()
-                import re
-                input_pattern = re.compile(r'\binput\s*\(')
-                interactive_tokens = [
-                    bool(input_pattern.search(norm_code)),
-                    'getpass(' in norm_code,
-                    'stdin.readline' in norm_code,
-                ]
-                if 'while true' in norm_code and 'input(' in norm_code:
-                    interactive_tokens.append(True)
-                is_ast_interactive = False
-                try:
-                    if not any(interactive_tokens):
-                        is_ast_interactive = self._is_interactive_code(code)
-                except Exception:
-                    pass
-                needs_interactive = any(interactive_tokens) or is_ast_interactive
-
-            mode = "clean"
-            if hasattr(self, 'exec_mode_combo'):
-                mode = self.exec_mode_combo.currentData()
-
-            if needs_interactive:
-                # Si precaptura activada, ejecutar simulando inputs en modo limpio
-                if getattr(self, 'precapture_checkbox', None) and self.precapture_checkbox.isChecked():
-                    return self._pre_capture_and_run(code)
-                if mode != "interactive":
-                    if hasattr(self, 'exec_mode_combo'):
-                        for i in range(self.exec_mode_combo.count()):
-                            if self.exec_mode_combo.itemData(i) == "interactive":
-                                self.exec_mode_combo.setCurrentIndex(i)
-                                break
-                    self.terminal_output.setTextColor(QColor("#F1C40F"))
-                    self.terminal_output.append("⚠️ Código interactivo detectado. Ejecutando en modo Interactivo.")
-                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                    mode = "interactive"
-
-            if mode == "interactive":
-                return self._run_code_interactive(code)
-            else:  # clean
-                import subprocess, sys, threading, queue
-
-                code_to_run = code.rstrip("\n") + "\n"
-
-                # Cola para comunicar resultados sin bloquear UI
-                result_q = queue.Queue()
-
-                def worker():
-                    try:
-                        proc = subprocess.Popen(
-                            [sys.executable, "-u", "-c", code_to_run],
-                            stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True
+            has_input_call = (
+                re.search(r'\binput\s*\(', code) is not None
+                or 'getpass(' in code
+                or 'stdin.readline' in code
+            )
+            prec = getattr(self, 'precapture_checkbox', None)
+            if prec and prec.isChecked() and has_input_call:
+                if getattr(self, '_precapturing', False):
+                    self.terminal_output.append("(info) Precaptura ya en curso...")
+                else:
+                    def launch_precapture(c):
+                        self._precapturing = True
+                        _safe_log(
+                            "🔍 Precaptura: se detectó input(). Mostrando diálogo.",
+                            "#87CEEB",
                         )
-                        try:
-                            stdout, stderr = proc.communicate(input="", timeout=0.4)
-                            result_q.put((stdout, stderr, proc.returncode, False))
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                            stdout, stderr = proc.communicate()
-                            result_q.put((stdout, stderr, proc.returncode, True))
-                    except Exception as e:
-                        result_q.put(("", f"Error ejecución: {e}", -1, False))
+                        ok_local = self._pre_capture_and_run(c)
+                        self._precapturing = False
+                        return ok_local
 
-                threading.Thread(target=worker, daemon=True).start()
+                    try:
+                        QTimer.singleShot(0, lambda c=code: launch_precapture(c))
+                        return True
+                    except Exception:
+                        if launch_precapture(code):
+                            return True
 
-                # Programar sondeo no bloqueante
-                def poll_result():
-                    if not result_q.empty():
-                        stdout, stderr, returncode, timed_out = result_q.get()
-                        if timed_out or 'EOF when reading a line' in (stderr or ''):
-                            auto_detect = getattr(self, 'auto_detect_checkbox', None)
-                            if auto_detect and auto_detect.isChecked():
-                                # Fallback automático
-                                msg = "⏳ Código no terminó (posible input). Reejecutando en modo Interactivo..." if timed_out else "⚠️ Entrada requerida. Cambiando a interactivo..."
-                                self.terminal_output.setTextColor(QColor("#F1C40F"))
-                                self.terminal_output.append(msg)
-                                self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                                if hasattr(self, 'exec_mode_combo'):
-                                    for i in range(self.exec_mode_combo.count()):
-                                        if self.exec_mode_combo.itemData(i) == "interactive":
-                                            self.exec_mode_combo.setCurrentIndex(i)
-                                            break
-                                self.execute_code_from_editor(code)
-                                return
-                            else:
-                                # Auto-detect desactivado: informar sin reejecutar
-                                self.terminal_output.setTextColor(QColor("#F1C40F"))
-                                warn = "⏳ Posible espera de input. Cambia a modo Interactivo o activa Auto-detect." if timed_out else "⚠️ Se detectó espera de entrada. Usa modo Interactivo."
-                                self.terminal_output.append(warn)
-                                self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                                # Mostrar lo capturado hasta ahora y salir
-                                if stdout:
-                                    self.terminal_output.setTextColor(QColor("#00FF00"))
-                                    self.terminal_output.append(stdout.rstrip("\n"))
-                                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                                if stderr:
-                                    self.terminal_output.setTextColor(QColor("#FF5555"))
-                                    self.terminal_output.append(stderr.rstrip("\n"))
-                                    self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                                return
-                        # Mostrar salida normal
-                        if stdout:
-                            self.terminal_output.setTextColor(QColor("#00FF00"))
-                            self.terminal_output.append(stdout.rstrip("\n"))
-                            self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                        if stderr:
-                            self.terminal_output.setTextColor(QColor("#FF5555"))
-                            self.terminal_output.append(stderr.rstrip("\n"))
-                            self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                        if returncode != 0 and not stderr:
-                            self.terminal_output.setTextColor(QColor("#FF5555"))
-                            self.terminal_output.append(f"(exit code {returncode})")
-                            self.terminal_output.setTextColor(QColor("#FFFFFF"))
-                        # Auto-scroll
-                        scrollbar = self.terminal_output.verticalScrollBar()
-                        scrollbar.setValue(scrollbar.maximum())
-                        return
-                    # Repetir sondeo hasta recibir resultado
-                    QTimer.singleShot(120, poll_result)
-
-                poll_result()
-                return True
+            run_file, run_cwd = self._materialize_script_file(
+                code, file_path, cwd, as_program=True
+            )
+            if not run_file:
+                return False
+            return self._run_program_in_embedded_shell(run_file, run_cwd)
         except Exception as e:
             self.terminal_output.setTextColor(QColor("#FF5555"))
             self.terminal_output.append(f"❌ Error ejecutando código: {e}")
             self.terminal_output.setTextColor(QColor("#FFFFFF"))
             return False
 
-    def _run_code_interactive(self, code: str) -> bool:
-        """Envía un bloque de código al REPL asegurando que el intérprete Python esté listo."""
+    def _run_code_interactive(
+        self,
+        code: str,
+        file_path: str | None = None,
+        cwd: str | None = None,
+    ) -> bool:
+        """Envía fragmentos cortos al REPL. Los scripts completos van por subprocess."""
+        run_file, run_cwd = self._materialize_script_file(code, file_path, cwd)
+        if run_file:
+            return self._run_program_in_embedded_shell(run_file, run_cwd)
         try:
             if self.shell_combo.currentData() != sys.executable:
                 self.shell_combo.setCurrentIndex(0)
@@ -722,8 +807,12 @@ class IntegratedTerminalNew(QWidget):
         """Recoge valores para input() y ejecuta el código simulando entradas en modo limpio."""
         prompts = self._extract_input_prompts(code)
         if not prompts:
-            # Nada que precapturar; fallback a modo interactivo para no entrar en loop
-            return self._run_code_interactive(code)
+            run_file, run_cwd = self._materialize_script_file(
+                code, None, None, as_program=True
+            )
+            if run_file:
+                return self._run_program_in_embedded_shell(run_file, run_cwd)
+            return False
         values = []
         # Atajo para pruebas automatizadas (sin GUI)
         test_env = os.getenv("EJECUTATE_TEST_INPUTS")
@@ -789,12 +878,12 @@ class IntegratedTerminalNew(QWidget):
                                     self.exec_mode_combo.setCurrentIndex(i)
                                     break
                         dialog.close()
-                        self._run_code_interactive(code)
+                        self.execute_code_from_editor(code)
                 QTimer.singleShot(2000, fallback_if_not_closed)
                 return True
             except Exception as e:
-                self.terminal_output.append(f"❌ Error diálogo precaptura: {e}. Fallback interactivo.")
-                return self._run_code_interactive(code)
+                self.terminal_output.append(f"❌ Error diálogo precaptura: {e}.")
+                return self.execute_code_from_editor(code)
 
         # Si llegamos aquí, tenemos values por variable de entorno y ejecutamos directo
         return self._finish_precapture_execution(code, values)

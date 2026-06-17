@@ -1,6 +1,6 @@
 # Documentación
 
-Bienvenido a la documentación de **Ejecútalo!**.
+Bienvenido a la documentación de **Ejecútate!**.
 
 ## Índice
 - [Instalación y ejecución](./install.md)
@@ -10,7 +10,7 @@ Bienvenido a la documentación de **Ejecútalo!**.
 - [Markdown y archivos de texto](./markdown.md)
 - [Búsqueda (Search) y reemplazo](./search.md)
 - [Terminal integrado](./terminal.md)
-- [Sistema educativo (Tutoriales/Debugger/Análisis)](./education.md)
+- [Sistema educativo (Tutoriales, Debugger, Paquetes, Análisis)](./education.md)
 - [Arquitectura del proyecto (MVC)](./architecture.md)
 - [Modo Café](./coffee-mode.md)
 - [Añadir tutoriales](./adding-tutorials.md)

@@ -42,10 +42,15 @@ class PackageInfo:
     latest_version: str = ""
     size: str = ""
     dependencies: List[str] = None
+    category: str = "📦 General"
+    pip_name: str = ""
+    builtin: bool = False
     
     def __post_init__(self):
         if self.dependencies is None:
             self.dependencies = []
+        if not self.pip_name:
+            self.pip_name = self.name
 
 class PackageManager:
     """Gestor de paquetes Python con interfaz amigable"""
@@ -56,99 +61,89 @@ class PackageManager:
         self._update_installed_packages()
     
     def _get_popular_packages(self) -> Dict[str, PackageInfo]:
-        """Retorna una lista de paquetes populares para principiantes"""
-        return {
-            'requests': PackageInfo(
-                'requests',
-                description='Librería para hacer peticiones HTTP de forma sencilla',
-                home_page='https://requests.readthedocs.io/',
-                author='Kenneth Reitz'
-            ),
-            'matplotlib': PackageInfo(
-                'matplotlib',
-                description='Librería para crear gráficos y visualizaciones',
-                home_page='https://matplotlib.org/',
-                author='John D. Hunter'
-            ),
-            'pandas': PackageInfo(
-                'pandas',
-                description='Análisis y manipulación de datos con estructuras potentes',
-                home_page='https://pandas.pydata.org/',
-                author='Wes McKinney'
-            ),
-            'numpy': PackageInfo(
-                'numpy',
-                description='Operaciones numéricas y arrays multidimensionales',
-                home_page='https://numpy.org/',
-                author='Travis Oliphant'
-            ),
-            'pillow': PackageInfo(
-                'pillow',
-                description='Manipulación de imágenes (PNG, JPEG, etc.)',
-                home_page='https://pillow.readthedocs.io/',
-                author='Alex Clark'
-            ),
-            'beautifulsoup4': PackageInfo(
-                'beautifulsoup4',
-                description='Análisis de documentos HTML y XML',
-                home_page='https://www.crummy.com/software/BeautifulSoup/',
-                author='Leonard Richardson'
-            ),
-            'flask': PackageInfo(
-                'flask',
-                description='Framework web minimalista y flexible',
-                home_page='https://flask.palletsprojects.com/',
-                author='Armin Ronacher'
-            ),
-            'django': PackageInfo(
-                'django',
-                description='Framework web completo y robusto',
-                home_page='https://www.djangoproject.com/',
-                author='Django Software Foundation'
-            ),
-            'pygame': PackageInfo(
-                'pygame',
-                description='Desarrollo de juegos 2D',
-                home_page='https://www.pygame.org/',
-                author='Pete Shinners'
-            ),
-            'tkinter': PackageInfo(
-                'tkinter',
-                description='Interfaz gráfica incluida con Python',
-                installed=True,  # Viene con Python
-                version='Built-in'
-            ),
-            'sqlite3': PackageInfo(
-                'sqlite3',
-                description='Base de datos ligera incluida con Python',
-                installed=True,  # Viene con Python
-                version='Built-in'
-            ),
-            'json': PackageInfo(
-                'json',
-                description='Trabajo con datos JSON incluido con Python',
-                installed=True,  # Viene con Python
-                version='Built-in'
-            ),
-            'random': PackageInfo(
-                'random',
-                description='Generación de números aleatorios incluido con Python',
-                installed=True,  # Viene con Python
-                version='Built-in'
-            ),
-            'datetime': PackageInfo(
-                'datetime',
-                description='Manejo de fechas y horas incluido con Python',
-                installed=True,  # Viene con Python
-                version='Built-in'
-            ),
-            'os': PackageInfo(
-                'os',
-                description='Interacción con el sistema operativo incluido con Python',
-                installed=True,  # Viene con Python
-                version='Built-in'
+        """Catálogo de paquetes habituales agrupados por uso."""
+        catalog = [
+            # Web y APIs
+            ("requests", "Peticiones HTTP sencillas", "🌐 Web", "Kenneth Reitz", "https://requests.readthedocs.io/"),
+            ("httpx", "HTTP moderno con soporte async", "🌐 Web", "", "https://www.python-httpx.org/"),
+            ("aiohttp", "Cliente y servidor HTTP asíncrono", "🌐 Web", "", "https://docs.aiohttp.org/"),
+            ("beautifulsoup4", "Parsear HTML y XML (web scraping)", "🌐 Web", "Leonard Richardson", "https://www.crummy.com/software/BeautifulSoup/"),
+            ("selenium", "Automatizar navegadores web", "🌐 Web", "", "https://selenium-python.readthedocs.io/"),
+            ("scrapy", "Framework de scraping a gran escala", "🌐 Web", "", "https://scrapy.org/"),
+            ("flask", "Framework web minimalista", "🌐 Web framework", "Armin Ronacher", "https://flask.palletsprojects.com/"),
+            ("django", "Framework web completo", "🌐 Web framework", "Django Software Foundation", "https://www.djangoproject.com/"),
+            ("fastapi", "APIs REST modernas y rápidas", "🌐 Web framework", "", "https://fastapi.tiangolo.com/"),
+            ("uvicorn", "Servidor ASGI (para FastAPI, etc.)", "🌐 Web framework", "", "https://www.uvicorn.org/", "uvicorn[standard]"),
+            ("jinja2", "Plantillas HTML para webs", "🌐 Web framework", "", "https://jinja.palletsprojects.com/"),
+            ("pandas", "Análisis y tablas de datos", "📊 Datos", "Wes McKinney", "https://pandas.pydata.org/"),
+            ("numpy", "Arrays y cálculo numérico", "📊 Datos", "Travis Oliphant", "https://numpy.org/"),
+            ("openpyxl", "Leer y escribir Excel (.xlsx)", "📊 Datos", "", "https://openpyxl.readthedocs.io/"),
+            ("pyyaml", "Archivos YAML (configuración)", "📊 Datos", "", "https://pyyaml.org/"),
+            ("python-dotenv", "Variables de entorno desde archivo .env", "📊 Datos", "", "https://github.com/theskumar/python-dotenv"),
+            # Visualización y PDF
+            ("matplotlib", "Gráficos y visualizaciones", "📈 Visualización", "John D. Hunter", "https://matplotlib.org/"),
+            ("seaborn", "Gráficos estadísticos sobre matplotlib", "📈 Visualización", "", "https://seaborn.pydata.org/"),
+            ("plotly", "Gráficos interactivos", "📈 Visualización", "", "https://plotly.com/python/"),
+            ("reportlab", "Generar documentos PDF", "📄 PDF", "", "https://www.reportlab.com/"),
+            ("markdown", "Convertir Markdown a HTML", "📄 Documentos", "", "https://python-markdown.github.io/"),
+            # Ciencia
+            ("scipy", "Algoritmos científicos y estadística", "🔬 Ciencia", "", "https://scipy.org/"),
+            ("scikit-learn", "Aprendizaje automático (ML)", "🔬 Ciencia", "", "https://scikit-learn.org/"),
+            # Imágenes y multimedia
+            ("pillow", "Abrir, editar y guardar imágenes", "🖼️ Imágenes", "Alex Clark", "https://pillow.readthedocs.io/"),
+            ("opencv-python", "Visión por ordenador y vídeo", "🖼️ Imágenes", "", "https://opencv.org/"),
+            # Persistencia: ORM, drivers y clientes de BD
+            ("sqlalchemy", "ORM y capa de acceso a bases de datos SQL", "💾 Datos y persistencia", "", "https://www.sqlalchemy.org/"),
+            ("pymongo", "Driver/cliente oficial para MongoDB", "💾 Datos y persistencia", "", "https://pymongo.readthedocs.io/"),
+            ("psycopg2-binary", "Driver PostgreSQL para Python", "💾 Datos y persistencia", "", "https://www.psycopg.org/"),
+            # Interfaz gráfica y terminal
+            ("pyside6", "Interfaces gráficas (Qt) — usado por este editor", "🖥️ GUI", "", "https://doc.qt.io/qtforpython/"),
+            ("customtkinter", "Tkinter con aspecto moderno", "🖥️ GUI", "", "https://github.com/TomSchimansky/CustomTkinter"),
+            ("rich", "Texto enriquecido y tablas en terminal", "🖥️ Terminal / TUI", "", "https://rich.readthedocs.io/"),
+            ("textual", "Aplicaciones TUI completas en terminal", "🖥️ Terminal / TUI", "", "https://textual.textualize.io/"),
+            ("click", "Crear comandos de consola (CLI)", "🖥️ Terminal / TUI", "", "https://click.palletsprojects.com/"),
+            ("typer", "CLIs con type hints (sobre Click)", "🖥️ Terminal / TUI", "", "https://typer.tiangolo.com/"),
+            # Juegos
+            ("pygame", "Juegos y gráficos 2D", "🎮 Juegos", "Pete Shinners", "https://www.pygame.org/"),
+            # Utilidades
+            ("tqdm", "Barras de progreso en bucles y descargas", "🔧 Utilidades", "", "https://tqdm.github.io/"),
+            ("loguru", "Logging sencillo y legible", "🔧 Utilidades", "", "https://loguru.readthedocs.io/"),
+            ("python-dateutil", "Fechas y zonas horarias avanzadas", "🔧 Utilidades", "", "https://dateutil.readthedocs.io/"),
+            ("cryptography", "Cifrado y seguridad", "🔒 Seguridad", "", "https://cryptography.io/"),
+            ("bcrypt", "Hashes de contraseñas", "🔒 Seguridad", "", "https://github.com/pyca/bcrypt/"),
+            # Desarrollo y calidad
+            ("pytest", "Tests automatizados", "🧪 Desarrollo", "", "https://docs.pytest.org/"),
+            ("black", "Formateador de código (estilo uniforme)", "🧪 Desarrollo", "", "https://black.readthedocs.io/"),
+            ("autopep8", "Formatear según PEP 8", "🧪 Desarrollo", "", "https://github.com/hhatto/autopep8"),
+            ("isort", "Ordenar imports automáticamente", "🧪 Desarrollo", "", "https://pycqa.github.io/isort/"),
+            ("ruff", "Linter y formateador muy rápido", "🧪 Desarrollo", "", "https://docs.astral.sh/ruff/"),
+            ("mypy", "Comprobación de tipos estáticos", "🧪 Desarrollo", "", "https://mypy.readthedocs.io/"),
+            # Incluidos en Python (referencia, no se instalan con pip)
+            ("tkinter", "Interfaz gráfica básica (stdlib)", "✅ Incluido en Python", "", "", "tkinter", True),
+            ("sqlite3", "Base de datos SQLite (stdlib)", "✅ Incluido en Python", "", "", "sqlite3", True),
+        ]
+
+        packages: Dict[str, PackageInfo] = {}
+        for entry in catalog:
+            pip_name = entry[0]
+            desc = entry[1]
+            category = entry[2]
+            author = entry[3] if len(entry) > 3 else ""
+            home = entry[4] if len(entry) > 4 else ""
+            install_name = entry[5] if len(entry) > 5 and entry[5] is not None else pip_name
+            builtin = entry[6] if len(entry) > 6 else False
+            packages[pip_name] = PackageInfo(
+                name=pip_name,
+                description=desc,
+                author=author,
+                home_page=home,
+                category=category,
+                pip_name=install_name,
+                builtin=builtin,
+                installed=builtin,
+                version="Built-in" if builtin else "",
             )
-        }
+        return packages
     
     def _update_installed_packages(self):
         """Actualiza la lista de paquetes instalados"""
@@ -395,10 +390,17 @@ class PackageManager:
                 'installed': package.installed,
                 'author': package.author,
                 'home_page': package.home_page,
-                'category': self._get_package_category(name)
+                'category': package.category,
+                'pip_name': package.pip_name,
+                'builtin': package.builtin,
             })
         
-        return sorted(packages, key=lambda x: (not x['installed'], x['name']))
+        return sorted(packages, key=lambda x: (x['category'], not x['installed'], x['name']))
+    
+    def get_categories(self) -> List[str]:
+        """Categorías únicas del catálogo, ordenadas."""
+        cats = sorted({p.category for p in self.popular_packages.values()})
+        return cats
     
     def get_installed_packages_list(self) -> List[Dict]:
         """Retorna lista de todos los paquetes instalados"""
@@ -414,49 +416,47 @@ class PackageManager:
         return sorted(packages, key=lambda x: x['name'])
     
     def _get_package_category(self, package_name: str) -> str:
-        """Retorna la categoría de un paquete"""
-        categories = {
-            'requests': '🌐 Web',
-            'matplotlib': '📊 Visualización',
-            'pandas': '📊 Datos',
-            'numpy': '🔢 Matemáticas',
-            'pillow': '🖼️ Imágenes',
-            'beautifulsoup4': '🌐 Web',
-            'flask': '🌐 Web Framework',
-            'django': '🌐 Web Framework',
-            'pygame': '🎮 Juegos',
-            'tkinter': '🖥️ GUI (Incluido)',
-            'sqlite3': '💾 Base de datos (Incluido)',
-            'json': '📄 Datos (Incluido)',
-            'random': '🎲 Utilidades (Incluido)',
-            'datetime': '📅 Fechas (Incluido)',
-            'os': '💻 Sistema (Incluido)'
-        }
-        return categories.get(package_name, '📦 General')
+        """Retorna la categoría de un paquete del catálogo."""
+        pkg = self.popular_packages.get(package_name)
+        if pkg:
+            return pkg.category
+        return "📦 General"
     
     def get_package_usage_examples(self, package_name: str) -> List[str]:
         """Retorna ejemplos de uso para paquetes populares"""
         examples = {
             'requests': [
-                '# Hacer una petición GET\nimport requests\nresponse = requests.get("https://api.github.com")\nprint(response.json())',
-                '# Descargar una imagen\nimport requests\nresponse = requests.get("https://ejemplo.com/imagen.jpg")\nwith open("imagen.jpg", "wb") as f:\n    f.write(response.content)'
+                '# Petición GET\nimport requests\nr = requests.get("https://api.github.com")\nprint(r.status_code)',
+            ],
+            'httpx': [
+                '# HTTP async\nimport httpx\nimport asyncio\n\nasync def main():\n    async with httpx.AsyncClient() as client:\n        r = await client.get("https://httpbin.org/get")\n        print(r.json())\n\nasyncio.run(main())',
             ],
             'matplotlib': [
-                '# Gráfico simple\nimport matplotlib.pyplot as plt\nx = [1, 2, 3, 4]\ny = [1, 4, 2, 3]\nplt.plot(x, y)\nplt.show()',
-                '# Gráfico de barras\nimport matplotlib.pyplot as plt\nnombres = ["Ana", "Luis", "María"]\nvalores = [23, 45, 56]\nplt.bar(nombres, valores)\nplt.show()'
+                '# Gráfico de líneas\nimport matplotlib.pyplot as plt\nplt.plot([1, 2, 3], [1, 4, 2])\nplt.title("Mi gráfico")\nplt.show()',
             ],
             'pandas': [
-                '# Crear DataFrame\nimport pandas as pd\ndata = {"nombre": ["Ana", "Luis"], "edad": [25, 30]}\ndf = pd.DataFrame(data)\nprint(df)',
-                '# Leer archivo CSV\nimport pandas as pd\ndf = pd.read_csv("datos.csv")\nprint(df.head())'
-            ],
-            'pillow': [
-                '# Abrir y redimensionar imagen\nfrom PIL import Image\nimg = Image.open("foto.jpg")\nimg_pequeña = img.resize((100, 100))\nimg_pequeña.save("foto_pequeña.jpg")'
+                '# DataFrame desde diccionario\nimport pandas as pd\ndf = pd.DataFrame({"nombre": ["Ana", "Luis"], "edad": [25, 30]})\nprint(df)',
             ],
             'flask': [
-                '# Aplicación web básica\nfrom flask import Flask\napp = Flask(__name__)\n\n@app.route("/")\ndef hola():\n    return "¡Hola mundo!"\n\nif __name__ == "__main__":\n    app.run(debug=True)'
-            ]
+                'from flask import Flask\napp = Flask(__name__)\n\n@app.route("/")\ndef inicio():\n    return "Hola desde Flask"\n\nif __name__ == "__main__":\n    app.run(debug=True)',
+            ],
+            'fastapi': [
+                'from fastapi import FastAPI\napp = FastAPI()\n\n@app.get("/")\ndef leer_raiz():\n    return {"mensaje": "Hola API"}\n\n# Ejecutar: uvicorn main:app --reload',
+            ],
+            'rich': [
+                'from rich.console import Console\nfrom rich.table import Table\n\nconsole = Console()\ntable = Table(title="Usuarios")\ntable.add_column("Nombre")\ntable.add_row("Ana")\nconsole.print(table)',
+            ],
+            'pytest': [
+                '# test_suma.py\ndef suma(a, b):\n    return a + b\n\ndef test_suma():\n    assert suma(2, 3) == 5\n\n# Ejecutar: pytest test_suma.py',
+            ],
+            'python-dotenv': [
+                '# .env → VARIABLE=valor\nfrom dotenv import load_dotenv\nimport os\n\nload_dotenv()\nprint(os.getenv("VARIABLE"))',
+            ],
+            'pillow': [
+                'from PIL import Image\nimg = Image.open("foto.jpg")\nimg.thumbnail((200, 200))\nimg.save("miniatura.jpg")',
+            ],
         }
-        return examples.get(package_name, ['# No hay ejemplos disponibles para este paquete'])
+        return examples.get(package_name, ['# Consulta la documentación oficial del paquete para ejemplos.'])
 
 class PackageManagerUI:
     """Interfaz para el gestor de paquetes"""
@@ -473,6 +473,26 @@ class PackageManagerUI:
         """Obtiene paquetes instalados para mostrar en la UI"""
         return self.package_manager.get_installed_packages_list()
     
+    def get_categories(self) -> List[str]:
+        """Categorías del catálogo para filtros en la UI."""
+        return self.package_manager.get_categories()
+    
+    def get_package_by_key(self, key: str) -> Optional[Dict]:
+        """Devuelve un paquete del catálogo por clave interna."""
+        pkg = self.package_manager.popular_packages.get(key)
+        if not pkg:
+            return None
+        return {
+            'key': key,
+            'name': pkg.name,
+            'pip_name': pkg.pip_name,
+            'description': pkg.description,
+            'installed': pkg.installed,
+            'builtin': pkg.builtin,
+            'category': pkg.category,
+            'examples': self.package_manager.get_package_usage_examples(pkg.name),
+        }
+
     def install_package_async(self, package_name: str, progress_callback=None) -> Dict:
         """Instala un paquete de forma asíncrona"""
         def install_thread():

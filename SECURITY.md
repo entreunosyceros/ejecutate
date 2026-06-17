@@ -9,7 +9,7 @@
 
 ## Alcance
 
-**Ejecútalo!** es una aplicación de escritorio (PySide6) que ejecuta código Python en un terminal integrado y puede abrir terminales del sistema operativo. En el ámbito de seguridad nos interesa especialmente:
+**Ejecútate!** es una aplicación de escritorio (PySide6) que ejecuta código Python en un terminal integrado y puede abrir terminales del sistema operativo. En el ámbito de seguridad nos interesa especialmente:
 
 - Ejecución de código o comandos no previstos al abrir archivos, proyectos o entradas del terminal integrado.
 - Inyección de comandos al invocar shells externos (`open_system_terminal`, REPL, modo interactivo).

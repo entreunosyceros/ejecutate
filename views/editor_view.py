@@ -1054,7 +1054,7 @@ class AboutDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Acerca de - Ejecútalo! - Un editor básico de Python")
+        self.setWindowTitle("Acerca de - Ejecútate! - Un editor básico de Python")
         self.setFixedSize(450, 600)  # Aumentado la altura para acomodar el scroll
         self.setModal(True)
         self._setup_ui()
@@ -1106,7 +1106,7 @@ class AboutDialog(QDialog):
         layout.addWidget(logo_label)
         
         # Título
-        title_label = QLabel("Editor de Código Python")
+        title_label = QLabel("Ejecútate!")
         title_label.setStyleSheet("""
             QLabel {
                 font-size: 20px;
@@ -1812,7 +1812,7 @@ class PreferencesDialog(QDialog):
     def __init__(self, parent=None, current_settings=None):
         super().__init__(parent)
         self.parent_editor = parent
-        self.setWindowTitle("Preferencias - Editor de Código Python")
+        self.setWindowTitle("Preferencias - Ejecútate!")
         self.setFixedSize(600, 750)  # Aumentado el ancho y altura para la pestaña del formatter
         self.setModal(True)
         
@@ -3696,6 +3696,8 @@ class AutoCompleteManager:
     
     def get_completions(self, text, cursor_position):
         """Obtiene las sugerencias de autocompletado para el texto actual"""
+        import re
+
         # Validar que cursor_position esté dentro del rango del texto
         if not text or cursor_position < 0 or cursor_position > len(text):
             return []
@@ -3705,16 +3707,37 @@ class AutoCompleteManager:
         while word_start > 0 and word_start <= len(text) and (text[word_start - 1].isalnum() or text[word_start - 1] == '_'):
             word_start -= 1
         
-        current_word = text[word_start:cursor_position].lower()
+        current_word = text[word_start:cursor_position]
+        current_word_lower = current_word.lower()
         
         if len(current_word) < 1:  # Mínimo 1 carácter para activar autocompletado
             return []
+
+        # Tras import / from … import no sugerir builtins (evita "os" → OSError)
+        line_start = text.rfind("\n", 0, word_start) + 1
+        line_before_word = text[line_start:word_start].lstrip()
+        if re.match(r"^import\s+\w*$", line_before_word) or re.match(
+            r"^from\s+\S+\s+import\s+\w*$", line_before_word
+        ):
+            return []
+        
+        def _is_prefix_match(term: str) -> bool:
+            """Solo sugerir si el término es un prefijo estricto (no la palabra ya escrita)."""
+            t = term.lower()
+            return t.startswith(current_word_lower) and len(t) > len(current_word_lower)
+
+        def _is_builtin_prefix(builtin_name: str) -> bool:
+            """Builtins: prefijo sensible a mayúsculas (os ≠ OSError)."""
+            return (
+                builtin_name.startswith(current_word)
+                and len(builtin_name) > len(current_word)
+            )
         
         completions = []
         
         # Snippets (prioridad alta)
         for snippet_key, snippet_info in self.snippets.items():
-            if snippet_key.startswith(current_word):
+            if _is_prefix_match(snippet_key):
                 completions.append({
                     'text': snippet_key,
                     'type': 'snippet',
@@ -3724,22 +3747,23 @@ class AutoCompleteManager:
         
         # Palabras clave
         for kw in self.keywords:
-            if kw.startswith(current_word):
+            if _is_prefix_match(kw):
                 completions.append({
                     'text': kw,
                     'type': 'keyword',
                     'description': 'Palabra clave de Python'
                 })
         
-        # Funciones built-in
-        for builtin in self.builtins:
-            if builtin.startswith(current_word):
-                doc = self.function_docs.get(builtin, 'Función built-in de Python')
-                completions.append({
-                    'text': builtin,
-                    'type': 'builtin',
-                    'description': doc
-                })
+        # Funciones built-in (mín. 2 letras para reducir ruido)
+        if len(current_word) >= 2:
+            for builtin in self.builtins:
+                if _is_builtin_prefix(builtin):
+                    doc = self.function_docs.get(builtin, 'Función built-in de Python')
+                    completions.append({
+                        'text': builtin,
+                        'type': 'builtin',
+                        'description': doc
+                    })
         
         # Ordenar por relevancia (snippets primero, luego por longitud)
         completions.sort(key=lambda x: (
@@ -3814,6 +3838,7 @@ class PythonCodeEditor(QPlainTextEdit):
         
         # Lista de errores de sintaxis actuales
         self.current_syntax_errors = []
+        self._skip_next_autocomplete = False
         
         # Configurar ancho inicial del área de numeración
         self.updateLineNumberAreaWidth(0)
@@ -4082,9 +4107,29 @@ class PythonCodeEditor(QPlainTextEdit):
                 break
         return indent
     
+    def focusOutEvent(self, event):
+        """Cierra autocompletado y tooltips al salir del editor."""
+        super().focusOutEvent(event)
+        try:
+            from PySide6.QtWidgets import QApplication
+            focused = QApplication.focusWidget()
+            popup = getattr(self, "autocomplete_widget", None)
+            if popup is not None and popup.isVisible():
+                if focused is popup or (focused and popup.isAncestorOf(focused)):
+                    return
+                popup.hide()
+            QToolTip.hideText()
+        except Exception:
+            pass
+
     def on_text_changed(self):
         """Maneja cambios en el texto para mostrar autocompletado"""
         try:
+            if getattr(self, "_skip_next_autocomplete", False):
+                self._skip_next_autocomplete = False
+                self.autocomplete_widget.hide()
+                return
+
             cursor = self.textCursor()
             text = self.toPlainText()
             cursor_position = cursor.position()
@@ -4145,6 +4190,9 @@ class PythonCodeEditor(QPlainTextEdit):
             cursor.insertText(completion_text)
         
         self.setTextCursor(cursor)
+        self._skip_next_autocomplete = True
+        self.autocomplete_widget.hide()
+        QToolTip.hideText()
     
     def on_text_changed_syntax(self):
         """Maneja cambios en el texto para verificación de sintaxis"""
@@ -5080,7 +5128,7 @@ class IntegratedTerminal(QWidget):
     def _show_welcome_message(self):
         """Muestra el mensaje de bienvenida del terminal"""
         welcome_text = """
-💻 Terminal Integrado - Editor de Código Python
+💻 Terminal Integrado - Ejecútate!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🔧 Modos disponibles:
@@ -5518,7 +5566,7 @@ class CodeEditorViewPySide:
         header.setObjectName("Panel")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(8, 6, 8, 6)
-        header_title = QLabel("Ejecútalo!")
+        header_title = QLabel("Ejecútate!")
         header_title.setStyleSheet("font-weight: 600;")
         header_layout.addWidget(header_title)
         self._header_workspace_path = QLabel("")
@@ -5764,37 +5812,31 @@ class CodeEditorViewPySide:
         initial_content = """🌟 GUÍA RÁPIDA (Getting Started)
 
 🧭 INTERFAZ (estilo VS Code/Cursor)
-• Activity Bar (izquierda): Explorer / Search / Terminal / Settings
-• Sidebar: pestañas Explorer + Search
-• Panel inferior: Terminal + Problems + esta ayuda
+• Activity Bar: Explorer / Search / Problems / Outline / Aprendizaje / Terminal / Settings
+• Sidebar: Explorer, Search, Problems, Outline, Aprendizaje
+• Barra superior: carpeta de trabajo + botón ☕ (Modo Café)
+• Panel inferior: Terminal + Problems + esta ayuda (Ctrl+` o ✕ para cerrar)
 
 ⌨️ ATAJOS IMPORTANTES
-• Ctrl+P → Quick Open (archivos recientes)
-• Ctrl+Shift+P → Command Palette (comandos)
-• Ctrl+Enter → Ejecutar código en Terminal (solo .py)
+• Ctrl+Shift+O → Abrir carpeta de trabajo
+• Ctrl+Enter → Ejecutar programa completo en Terminal (solo .py)
+• Ctrl+` → Mostrar/ocultar panel inferior
+• Ctrl+Alt+C → Modo Café / Pomodoro (pausa manual)
 • Ctrl+Shift+V → Vista previa Markdown (solo .md)
-• Ctrl+W → Cerrar pestaña (avisa si hay cambios sin guardar)
-• Ctrl+` → Mostrar u ocultar panel inferior (Terminal, Problems…)
-• Ctrl+Alt+C → Modo Café (pausa: bloquea hasta mover ratón o pulsar tecla)
+• F2 → Documentación completa (Ayuda)
 
-📝 PESTAÑAS Y MARKDOWN
-• El explorador muestra iconos por tipo de archivo
-• Archivos .md: vista previa opcional con el botón 👁️ o Ctrl+Shift+V
-• .txt y .md no permiten ejecutar código (Ctrl+Enter deshabilitado)
-• Al cerrar una pestaña con cambios: Guardar / No / Cancelar
+⚠️ PROBLEMS Y OUTLINE
+• Problems: errores de sintaxis y avisos del .py activo (badge en Activity Bar)
+• Outline: clases y funciones con salto a línea
 
-🔍 SEARCH (sidebar)
-• Resultados clicables + preview del match
-• Flags: Aa (case), Ab (palabra), .* (regex), “En archivos”
-• Replace: Reemplazar / Reemplazar todo
+💻 TERMINAL
+• Ejecutar lanza el archivo entero; programas interactivos: caja inferior + Enter
+• Ctrl+Alt+T → Terminal del sistema (proyectos con venv propio o TUI)
 
-🧪 DEBUGGER / APRENDIZAJE
-• F4 → Tutoriales
-• F5 → Debugger visual (Paso / Ejecutar hasta breakpoint / Detener)
-• F6 → Gestor de paquetes
-• F7 → Análisis de código
+🧪 APRENDIZAJE (sidebar o F4–F7)
+• F4 Tutoriales · F5 Debugger · F6 Paquetes · F7 Análisis
 
-💡 Tip: revisa también la documentación completa (F2) y el README del proyecto.
+💡 Tip: documentación completa en Ayuda → F2 o pestaña 🖥️ Interfaz en el diálogo.
 """
         
         self.output_text.setText(initial_content)
@@ -5823,7 +5865,13 @@ class CodeEditorViewPySide:
             if self.input_text:
                 self.input_text.cursorPositionChanged.connect(self._update_status_position)
                 if hasattr(self.input_text, "syntaxErrorsChanged"):
-                    self.input_text.syntaxErrorsChanged.connect(self.problems_panel.set_errors)
+                    self.input_text.syntaxErrorsChanged.connect(self._on_syntax_errors_changed)
+                    self._syntax_errors_connected_editor = self.input_text
+                    try:
+                        errs = getattr(self.input_text, "current_syntax_errors", [])
+                        self._on_syntax_errors_changed(errs)
+                    except Exception:
+                        pass
             if hasattr(self, "tabbed_editor"):
                 self.tabbed_editor.currentChanged.connect(self._on_tab_changed_status)
             self._update_status_position()
@@ -6316,7 +6364,9 @@ class CodeEditorViewPySide:
             if hasattr(self, "execute_terminal_button"):
                 self.execute_terminal_button.setEnabled(executable)
                 if executable:
-                    self.execute_terminal_button.setToolTip("Ejecutar código en el terminal (Ctrl+Enter)")
+                    self.execute_terminal_button.setToolTip(
+                        "Ejecutar todo el archivo como programa Python (Ctrl+Enter)"
+                    )
                 else:
                     ext = os.path.splitext(path or "")[1].lower()
                     self.execute_terminal_button.setToolTip(
@@ -6823,7 +6873,7 @@ class CodeEditorViewPySide:
         self.tray_icon.setContextMenu(self.tray_menu)
         
         # Configurar el tooltip
-        self.tray_icon.setToolTip("Editor de Código Python")
+        self.tray_icon.setToolTip("Ejecútate!")
         
         # Conectar el doble clic para restaurar la ventana
         self.tray_icon.activated.connect(self._tray_icon_activated)
@@ -6833,7 +6883,7 @@ class CodeEditorViewPySide:
         
         # Mostrar mensaje de información
         self.tray_icon.showMessage(
-            "Editor de Código Python",
+            "Ejecútate!",
             "La aplicación se ha iniciado en la bandeja del sistema.\nHaz doble clic en el icono para restaurar la ventana.",
             QSystemTrayIcon.MessageIcon.Information,
             3000  # 3 segundos
@@ -6872,7 +6922,7 @@ class CodeEditorViewPySide:
             # Mostrar mensaje solo la primera vez
             if not hasattr(self, '_first_minimize_shown'):
                 self.tray_icon.showMessage(
-                    "Editor de Código Python",
+                    "Ejecútate!",
                     "La aplicación se ha minimizado a la bandeja del sistema.",
                     QSystemTrayIcon.MessageIcon.Information,
                     2000
@@ -6966,8 +7016,14 @@ class CodeEditorViewPySide:
     
     def set_button_command(self, button_name, command):
         """Establece el comando para un botón específico"""
-        if button_name == "execute" or button_name == "execute_terminal":
-            # Ambos nombres mapean al mismo botón ahora
+        if button_name in ("execute", "execute_terminal"):
+            previous = getattr(self, "_execute_terminal_handler", None)
+            if previous is not None:
+                try:
+                    self.execute_terminal_button.clicked.disconnect(previous)
+                except Exception:
+                    pass
+            self._execute_terminal_handler = command
             self.execute_terminal_button.clicked.connect(command)
         elif button_name == "clear":
             self.clear_button.clicked.connect(command)
@@ -7437,6 +7493,27 @@ class CodeEditorViewPySide:
             if not code.strip():
                 self.show_message("Información", "📝 No hay código para ejecutar", "info")
                 return
+
+            file_path = None
+            run_cwd = None
+            if hasattr(self, "tabbed_editor"):
+                file_path = self.tabbed_editor.get_current_file_path()
+                current_index = self.tabbed_editor.currentIndex()
+                tab_data = self.tabbed_editor.tab_data.get(current_index)
+                if file_path and tab_data and tab_data.is_modified:
+                    if not self.save_file_content():
+                        self.show_message(
+                            "Advertencia",
+                            "No se pudo guardar el archivo antes de ejecutar.",
+                            "warning",
+                        )
+                        return
+                if hasattr(self, "file_explorer") and getattr(self.file_explorer, "current_root_path", None):
+                    run_cwd = self.file_explorer.current_root_path
+            if file_path:
+                parent = os.path.dirname(os.path.abspath(file_path))
+                if parent:
+                    run_cwd = parent
             
             # Mostrar panel y cambiar a la pestaña del terminal
             self._show_bottom_panel(focus_terminal=True)
@@ -7445,13 +7522,11 @@ class CodeEditorViewPySide:
             if hasattr(self, 'integrated_terminal'):
                 ok = False
                 try:
-                    ok = self.integrated_terminal.execute_code_from_editor(code)
+                    ok = self.integrated_terminal.execute_code_from_editor(
+                        code, file_path=file_path, cwd=run_cwd
+                    )
                 except Exception as inner_e:
-                    print(f"Fallo execute_code_from_editor: {inner_e}, usando send_to_terminal de respaldo")
-                    # Respaldo: enviar al REPL (mostrará prompts)
-                    if hasattr(self.integrated_terminal, 'send_to_terminal'):
-                        self.integrated_terminal.send_to_terminal(code)
-                        ok = True
+                    print(f"Fallo execute_code_from_editor: {inner_e}")
                 if not ok:
                     self.show_message("Error", "❌ No se pudo ejecutar el código", "error")
             else:
@@ -8388,12 +8463,39 @@ class TutorialDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
-        # Lista de tutoriales
+        # Lista de tutoriales (agrupados por nivel)
         self.tutorials_list = QListWidget()
         tutorials = self.tutorial_manager.get_tutorial_list() if self.tutorial_manager else []
-        
+
+        try:
+            from tutorials_config import DIFFICULTY_HEADERS
+        except ImportError:
+            DIFFICULTY_HEADERS = {}
+
+        last_difficulty = None
         for tutorial in tutorials:
-            item_text = f"📚 {tutorial['title']}\n💡 {tutorial['description']}\n🔢 {tutorial['steps_count']} pasos | 📊 {tutorial['difficulty']}"
+            difficulty = tutorial['difficulty']
+            if difficulty != last_difficulty:
+                header_text = DIFFICULTY_HEADERS.get(
+                    difficulty, f"📊 {difficulty}"
+                )
+                header = QListWidgetItem(header_text)
+                header.setFlags(Qt.ItemFlag.NoItemFlags)
+                header.setData(Qt.ItemDataRole.UserRole, None)
+                header.setBackground(QColor("#252526"))
+                header.setForeground(QColor("#CCCCCC"))
+                font = header.font()
+                font.setBold(True)
+                font.setPointSize(font.pointSize() + 1)
+                header.setFont(font)
+                self.tutorials_list.addItem(header)
+                last_difficulty = difficulty
+
+            item_text = (
+                f"📚 {tutorial['title']}\n"
+                f"💡 {tutorial['description']}\n"
+                f"🔢 {tutorial['steps_count']} pasos"
+            )
             item = QListWidgetItem(item_text)
             item.setData(Qt.ItemDataRole.UserRole, tutorial['id'])
             self.tutorials_list.addItem(item)
@@ -8446,11 +8548,16 @@ class TutorialDialog(QDialog):
             return
         
         tutorial_id = current_item.data(Qt.ItemDataRole.UserRole)
+        if not tutorial_id:
+            QMessageBox.information(
+                self,
+                "Selección requerida",
+                "Selecciona un tutorial de la lista (no el encabezado de nivel).",
+            )
+            return
+
         if self.tutorial_manager and self.tutorial_manager.start_tutorial(tutorial_id):
-            # Cerrar este diálogo y abrir el diálogo de tutorial paso a paso
             self.accept()
-            
-            # Crear y mostrar el diálogo de tutorial paso a paso
             tutorial_step_dialog = TutorialStepDialog(self.parent(), self.tutorial_manager)
             tutorial_step_dialog.exec()
         else:
@@ -8926,94 +9033,212 @@ class DebuggerDialog(QDialog):
 
 
 class PackageManagerDialog(QDialog):
-    """Diálogo para gestión de paquetes"""
+    """Diálogo para gestión de paquetes Python (catálogo + pip)."""
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        from analyzers.package_manager import get_package_manager
+        self._pm = get_package_manager()
         self.setWindowTitle("📦 Gestor de Paquetes Python")
-        self.setGeometry(100, 100, 700, 500)
+        self.setGeometry(100, 100, 820, 560)
         self.setModal(True)
         self._setup_ui()
+        self._refresh_lists()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Título
         title = QLabel("📦 Gestor de Paquetes Python")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin: 10px;")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin: 8px;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
-        # Pestañas
+        hint = QLabel(
+            "Catálogo de librerías habituales. Selecciona una, revisa el ejemplo y pulsa Instalar "
+            "(usa el Python del entorno actual)."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #555; margin-bottom: 6px;")
+        layout.addWidget(hint)
+        
         tabs = QTabWidget()
         
-        # Pestaña de paquetes populares
+        # --- Catálogo ---
         popular_tab = QWidget()
         popular_layout = QVBoxLayout(popular_tab)
-        popular_layout.addWidget(QLabel("🌟 Paquetes populares para principiantes:"))
         
-        popular_list = QListWidget()
-        popular_packages = [
-            "📊 matplotlib - Crear gráficos y visualizaciones",
-            "🌐 requests - Realizar peticiones HTTP",
-            "📈 pandas - Análisis de datos",
-            "🔢 numpy - Operaciones matemáticas",
-            "🖼️ pillow - Manipular imágenes",
-            "🎮 pygame - Crear juegos 2D"
-        ]
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Categoría:"))
+        self.category_combo = QComboBox()
+        self.category_combo.addItem("Todas las categorías", "")
+        for cat in self._pm.get_categories():
+            self.category_combo.addItem(cat, cat)
+        self.category_combo.currentIndexChanged.connect(self._refresh_popular_list)
+        filter_row.addWidget(self.category_combo, 1)
+        popular_layout.addLayout(filter_row)
         
-        for package in popular_packages:
-            popular_list.addItem(package)
+        self.popular_list = QListWidget()
+        self.popular_list.currentItemChanged.connect(self._on_package_selected)
+        popular_layout.addWidget(self.popular_list, 2)
         
-        popular_layout.addWidget(popular_list)
+        popular_layout.addWidget(QLabel("Ejemplo / detalle:"))
+        self.detail_text = QTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setMaximumHeight(140)
+        self.detail_text.setFont(QFont("Consolas", 10))
+        popular_layout.addWidget(self.detail_text)
         
-        # Botones
-        button_layout = QHBoxLayout()
-        install_button = QPushButton("⬇️ Instalar Seleccionado")
-        install_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27AE60;
-                color: white;
-                border: none;
-                padding: 10px 15px;
-                border-radius: 5px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #2ECC71; }
-        """)
+        btn_row = QHBoxLayout()
+        self.install_button = QPushButton("⬇️ Instalar seleccionado")
+        self.install_button.setStyleSheet(
+            "QPushButton { background-color: #27AE60; color: white; padding: 8px 14px; "
+            "border-radius: 5px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #2ECC71; }"
+            "QPushButton:disabled { background-color: #95A5A6; }"
+        )
+        self.install_button.clicked.connect(self._install_selected)
+        btn_row.addWidget(self.install_button)
         
-        button_layout.addWidget(install_button)
-        button_layout.addStretch()
-        popular_layout.addLayout(button_layout)
+        refresh_btn = QPushButton("🔄 Actualizar listas")
+        refresh_btn.clicked.connect(self._refresh_lists)
+        btn_row.addWidget(refresh_btn)
+        btn_row.addStretch()
+        popular_layout.addLayout(btn_row)
         
-        tabs.addTab(popular_tab, "🌟 Populares")
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setMaximumHeight(80)
+        self.log_text.setPlaceholderText("Registro de instalación…")
+        popular_layout.addWidget(self.log_text)
         
-        # Pestaña de instalados
+        tabs.addTab(popular_tab, "🌟 Catálogo")
+        
+        # --- Instalados ---
         installed_tab = QWidget()
         installed_layout = QVBoxLayout(installed_tab)
-        installed_layout.addWidget(QLabel("📦 Paquetes instalados:"))
-        
-        installed_list = QListWidget()
-        installed_list.addItem("✅ Python Standard Library (incluido)")
-        installed_list.addItem("✅ tkinter (incluido)")
-        installed_list.addItem("✅ sqlite3 (incluido)")
-        
-        installed_layout.addWidget(installed_list)
+        installed_layout.addWidget(QLabel("Paquetes instalados en este entorno Python:"))
+        self.installed_list = QListWidget()
+        installed_layout.addWidget(self.installed_list)
         tabs.addTab(installed_tab, "✅ Instalados")
         
         layout.addWidget(tabs)
         
-        # Botón cerrar
         close_button = QPushButton("❌ Cerrar")
-        close_button.setStyleSheet("""
-            QPushButton {
-                background-color: #E74C3C;
-                color: white;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 5px;
-            }
-            QPushButton:hover { background-color: #EC7063; }
-        """)
+        close_button.setStyleSheet(
+            "QPushButton { background-color: #E74C3C; color: white; padding: 8px 20px; border-radius: 5px; }"
+            "QPushButton:hover { background-color: #EC7063; }"
+        )
         close_button.clicked.connect(self.close)
         layout.addWidget(close_button)
+    
+    def _log(self, message: str):
+        self.log_text.append(message)
+    
+    def _refresh_lists(self):
+        try:
+            self._pm.package_manager._update_installed_packages()
+        except Exception:
+            pass
+        self._refresh_popular_list()
+        self._refresh_installed_list()
+    
+    def _refresh_popular_list(self):
+        self.popular_list.clear()
+        filter_cat = self.category_combo.currentData()
+        for pkg in self._pm.get_popular_packages():
+            if filter_cat and pkg.get("category") != filter_cat:
+                continue
+            if pkg.get("builtin"):
+                status = "📦"
+            elif pkg.get("installed"):
+                status = "✅"
+            else:
+                status = "⬜"
+            label = f"{status} {pkg['name']} — {pkg['description']}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, pkg)
+            if pkg.get("category"):
+                item.setToolTip(pkg["category"])
+            self.popular_list.addItem(item)
+        if self.popular_list.count() and not self.popular_list.currentItem():
+            self.popular_list.setCurrentRow(0)
+    
+    def _refresh_installed_list(self):
+        self.installed_list.clear()
+        for pkg in self._pm.get_installed_packages():
+            ver = pkg.get("version") or "?"
+            self.installed_list.addItem(f"✅ {pkg['name']} ({ver})")
+        if self.installed_list.count() == 0:
+            self.installed_list.addItem("(No se detectaron paquetes pip)")
+    
+    def _on_package_selected(self, current, _previous):
+        if not current:
+            self.detail_text.clear()
+            return
+        pkg = current.data(Qt.ItemDataRole.UserRole) or {}
+        key = pkg.get("name", "")
+        info = self._pm.get_package_by_key(key) or pkg
+        lines = [
+            f"<b>{info.get('name', key)}</b>",
+            f"<i>{info.get('category', '')}</i>",
+            info.get("description", ""),
+        ]
+        if info.get("builtin"):
+            lines.append("<br><b>Ya incluido en la biblioteca estándar de Python.</b>")
+        elif info.get("installed"):
+            lines.append("<br><b>Estado:</b> instalado en este entorno")
+        else:
+            pip = info.get("pip_name", key)
+            lines.append(f"<br><b>Instalar con:</b> pip install {pip}")
+        examples = info.get("examples") or []
+        if examples:
+            lines.append("<br><pre>" + examples[0].replace("<", "&lt;") + "</pre>")
+        self.detail_text.setHtml("<br>".join(lines))
+    
+    def _install_selected(self):
+        item = self.popular_list.currentItem()
+        if not item:
+            QMessageBox.information(self, "Gestor de paquetes", "Selecciona un paquete de la lista.")
+            return
+        pkg = item.data(Qt.ItemDataRole.UserRole) or {}
+        if pkg.get("builtin"):
+            QMessageBox.information(
+                self, "Incluido en Python",
+                f"«{pkg.get('name')}» forma parte de la biblioteca estándar; no hace falta pip install.",
+            )
+            return
+        if pkg.get("installed"):
+            reply = QMessageBox.question(
+                self, "Ya instalado",
+                f"«{pkg.get('name')}» parece instalado. ¿Reinstalar/actualizar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        pip_name = pkg.get("pip_name") or pkg.get("name")
+        if not pip_name:
+            return
+        
+        self.install_button.setEnabled(False)
+        self._log(f"--- pip install {pip_name} ---")
+        
+        import threading
+        
+        def worker():
+            def safe_log(msg):
+                QTimer.singleShot(0, lambda m=msg: self._log(m))
+            result = self._pm.install_package_async(pip_name, safe_log)
+            QTimer.singleShot(0, lambda r=result: self._on_install_finished(r))
+        
+        threading.Thread(target=worker, daemon=True).start()
+    
+    def _on_install_finished(self, result: dict):
+        self.install_button.setEnabled(True)
+        self._refresh_lists()
+        if result.get("success"):
+            QMessageBox.information(self, "Éxito", result.get("message", "Instalado."))
+        else:
+            QMessageBox.warning(
+                self, "Error",
+                result.get("message", "No se pudo instalar") + "\n" + (result.get("error") or ""),
+            )

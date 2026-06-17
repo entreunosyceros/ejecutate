@@ -60,10 +60,12 @@ Más detalle: [Archivos, pestañas y explorador](./files-and-tabs.md).
 - `Ctrl+Alt+F`: Formatear código (Python)
 
 ### Sistema educativo
-- `F4`: Tutoriales
-- `F5`: Debugger visual
-- `F6`: Gestor de paquetes
-- `F7`: Análisis de código
+- `F4`: **Tutoriales** interactivos (17, ordenados por nivel: Principiante → Experto)
+- `F5`: **Debugger** visual (paso a paso, variables, salida)
+- `F6`: **Gestor de paquetes** (~48 librerías, filtro por categoría, instalación con pip)
+- `F7`: **Análisis** de código en tiempo real
+
+Detalle: [Sistema educativo](./education.md) · [Añadir tutoriales](./adding-tutorials.md)
 
 ### Modo Café y Pomodoro
 - `Ctrl+Alt+C`: Activar/desactivar Modo Café (pausa manual)

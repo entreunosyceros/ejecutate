@@ -1,6 +1,6 @@
 # Guía de contribución
 
-¡Gracias por interesarte en **Ejecútalo!** — editor de código Python con interfaz PySide6, terminal integrado, sistema educativo y documentación en [`Docs/`](Docs/README.md). Cualquier mejora bien planteada es bienvenida.
+¡Gracias por interesarte en **Ejecútate!** — editor de código Python con interfaz PySide6, terminal integrado, sistema educativo y documentación en [`Docs/`](Docs/README.md). Cualquier mejora bien planteada es bienvenida.
 
 Repositorio oficial: https://github.com/entreunosyceros/ejecutate
 

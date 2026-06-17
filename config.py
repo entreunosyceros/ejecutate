@@ -6,7 +6,7 @@ class AppConfig:
     """Configuraciones generales de la aplicación"""
     
     # Configuración de la ventana principal
-    WINDOW_TITLE = "Ejecútalo! - Editor básico de Python"
+    WINDOW_TITLE = "Ejecútate! - Editor básico de Python"
     WINDOW_GEOMETRY = "1000x700"
     
     # Configuración del área de código
@@ -31,7 +31,7 @@ class AppConfig:
     # Configuración de bandeja del sistema
     TRAY_ENABLED = True
     TRAY_ICON_PATH = "img/logo.png"
-    TRAY_TOOLTIP = "Editor de Código Python"
+    TRAY_TOOLTIP = "Ejecútate!"
     
     # Configuración de preferencias
     PREFERENCES_ENABLED = True
@@ -292,7 +292,7 @@ class AppConfig:
     
     # Mensajes
     WELCOME_MESSAGE = """
-🐍 ¡Bienvenido al Editor de Código Python Profesional!
+🐍 ¡Bienvenido a Ejecútate!
 
 🚀 Nuevas Características:
 • 🎭 Bandeja del sistema: Minimiza a la bandeja al cerrar

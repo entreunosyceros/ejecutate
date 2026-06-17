@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Editor de Código Python con arquitectura MVC
+Ejecútate! — Editor de código Python con arquitectura MVC
 Versión PySide6 con resaltado de sintaxis
 """
 
@@ -50,7 +50,7 @@ def install_dependencies():
 
 def main():
     """Función principal que inicia la aplicación"""
-    parser = argparse.ArgumentParser(description="Editor de Código Python con PySide6")
+    parser = argparse.ArgumentParser(description="Ejecútate! — Editor de código Python con PySide6")
     parser.add_argument("--install-deps", action="store_true",
                        help="Instalar dependencias automáticamente")
     parser.add_argument("--check-deps", action="store_true",
@@ -83,7 +83,7 @@ def main():
         sys.exit(1)
     
     try:
-        print("🚀 Iniciando Editor de Código Python con PySide6 y resaltado de sintaxis...")
+        print("🚀 Iniciando Ejecútate! (PySide6, resaltado de sintaxis)...")
         from controllers.editor_controller import CodeEditorController
         app = CodeEditorController()
         app.run()

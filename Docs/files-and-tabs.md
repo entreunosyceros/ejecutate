@@ -46,9 +46,9 @@ Si el archivo ya está en otra pestaña, al abrirlo de nuevo solo se **activa** 
 
 ## Carpeta de trabajo en la barra superior
 
-Junto al título **Ejecútalo!** se muestra la ruta de la carpeta raíz del explorador, por ejemplo:
+Junto al título **Ejecútate!** se muestra la ruta de la carpeta raíz del explorador, por ejemplo:
 
-`Ejecútalo! — /home/usuario/proyectos/mi-app`
+`Ejecútate! — /home/usuario/proyectos/mi-app`
 
 - Si la ruta es larga, se acorta por el centro; el **tooltip** muestra la ruta completa.
 - El texto es **seleccionable** para copiarlo.

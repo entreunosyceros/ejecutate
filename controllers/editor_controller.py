@@ -18,7 +18,6 @@ class CodeEditorController:
     def _setup_bindings(self):
         """Configura los eventos y comandos de la vista"""
         # Asociar comandos a los botones
-        self.view.set_button_command("execute", self.execute_code)
         self.view.set_button_command("execute_terminal", self.execute_code_in_terminal)
         self.view.set_button_command("clear", self.clear_all)
         
@@ -32,8 +31,8 @@ class CodeEditorController:
             self.show_about
         )
         
-        # Configurar atajos de teclado PySide6
-        self.view.set_key_bindings(self.execute_code, self.clear_all)
+        # Ctrl+Enter ejecuta en terminal integrado (no usar exec() en el hilo GUI)
+        self.view.set_key_bindings(self.execute_code_in_terminal, self.clear_all)
     
     def execute_code(self):
         """Ejecuta el código ingresado por el usuario"""

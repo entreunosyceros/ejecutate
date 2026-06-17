@@ -13,7 +13,7 @@ class DocumentationDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("📚 Documentación - Editor de Código Python")
+        self.setWindowTitle("📚 Documentación - Ejecútate!")
         self.setModal(True)
         self.resize(800, 700)
         self.setup_ui()
@@ -23,7 +23,7 @@ class DocumentationDialog(QDialog):
         layout = QVBoxLayout(self)
         
         # Título principal
-        title_label = QLabel("📚 Guía Completa del Editor de Código Python")
+        title_label = QLabel("📚 Guía Completa de Ejecútate!")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("""
             QLabel {
@@ -74,19 +74,23 @@ class DocumentationDialog(QDialog):
         editor_tab = self.create_editor_tab()
         tab_widget.addTab(editor_tab, "📝 Editor")
         
-        # Pestaña 3: Terminal
+        # Pestaña 3: Interfaz (Activity Bar, paneles)
+        interface_tab = self.create_interface_tab()
+        tab_widget.addTab(interface_tab, "🖥️ Interfaz")
+        
+        # Pestaña 4: Terminal
         terminal_tab = self.create_terminal_tab()
         tab_widget.addTab(terminal_tab, "💻 Terminal")
         
-        # Pestaña 4: Funciones Educativas
+        # Pestaña 5: Funciones Educativas
         educational_tab = self.create_educational_tab()
         tab_widget.addTab(educational_tab, "🎓 Aprendizaje")
         
-        # Pestaña 5: Características Avanzadas
+        # Pestaña 6: Características Avanzadas
         features_tab = self.create_features_tab()
         tab_widget.addTab(features_tab, "⚡ Funciones")
         
-        # Pestaña 6: Atajos de Teclado
+        # Pestaña 7: Atajos de Teclado
         shortcuts_tab = self.create_shortcuts_tab()
         tab_widget.addTab(shortcuts_tab, "⌨️ Atajos")
         
@@ -144,27 +148,33 @@ class DocumentationDialog(QDialog):
     def create_intro_tab(self):
         """Crea la pestaña de introducción"""
         content = """
-        <h2 style="color: #2C3E50;">🎉 ¡Bienvenido al Editor de Código Python!</h2>
+        <h2 style="color: #2C3E50;">🎉 ¡Bienvenido a Ejecútate!</h2>
         
         <p>Este editor está diseñado para hacer que programar en Python sea <strong>fácil</strong>, <strong>cómodo</strong> y <strong>productivo</strong>.</p>
         
         <h3 style="color: #E74C3C;">🌟 Características Principales:</h3>
         <ul>
-            <li><strong>📝 Editor con Pestañas:</strong> Trabajo con múltiples archivos simultáneamente</li>
-            <li><strong>🎨 Resaltado de Sintaxis:</strong> Código Python con colores para mejor legibilidad</li>
-            <li><strong>💻 Terminal Integrado:</strong> Ejecuta código directamente sin salir del editor</li>
-            <li><strong>🔍 Búsqueda Avanzada:</strong> Busca y reemplaza texto en archivos individuales o múltiples</li>
-            <li><strong>🎯 Formateo Automático:</strong> Código limpio según estándares PEP 8</li>
-            <li><strong>📁 Explorador de Archivos:</strong> Navega por tu proyecto fácilmente</li>
-            <li><strong>💾 Gestión de Sesiones:</strong> Guarda y restaura tu trabajo automáticamente</li>
+            <li><strong>📝 Editor con Pestañas:</strong> Varios archivos a la vez, indicador <code>•</code> si hay cambios sin guardar</li>
+            <li><strong>🖥️ Interfaz tipo Cursor/VS Code:</strong> Activity Bar, sidebar (Explorer, Search, Problems, Outline, Aprendizaje) y panel inferior</li>
+            <li><strong>🎨 Resaltado de Sintaxis:</strong> Palabras clave, cadenas, comentarios y números con colores del tema</li>
+            <li><strong>⚠️ Problems:</strong> Errores y avisos del archivo Python (salto a línea/columna)</li>
+            <li><strong>📋 Outline:</strong> Clases y funciones del archivo actual con salto rápido</li>
+            <li><strong>💻 Terminal Integrado:</strong> Ejecuta el programa completo; programas interactivos usan la caja inferior</li>
+            <li><strong>☕ Modo Café / Pomodoro:</strong> Pausas con overlay y temporizador configurable</li>
+            <li><strong>🔍 Búsqueda Avanzada:</strong> En archivo, reemplazo y búsqueda en carpeta</li>
+            <li><strong>🎯 Formateo Automático:</strong> PEP 8 con autopep8 o black</li>
+            <li><strong>📁 Explorador y carpeta de trabajo:</strong> Ruta visible en la barra superior</li>
+            <li><strong>🎓 Herramientas de aprendizaje:</strong> Tutoriales, debugger, paquetes y análisis (F4–F7)</li>
+            <li><strong>💾 Sesiones:</strong> Restaura pestañas y preferencias al reiniciar</li>
         </ul>
         
         <h3 style="color: #27AE60;">🚀 ¿Cómo Empezar?</h3>
         <ol>
-            <li><strong>Escribir Código:</strong> Usa el área de texto principal para escribir tu código Python</li>
-            <li><strong>Ejecutar:</strong> Presiona <code>Ctrl+Enter</code> o el botón "🚀 Ejecutar Código"</li>
-            <li><strong>Ver Resultados:</strong> La salida aparece directamente en el terminal integrado</li>
-            <li><strong>Interactuar:</strong> El terminal soporta input() y comandos interactivos</li>
+            <li><strong>Abrir carpeta:</strong> <code>Ctrl+Shift+O</code> para fijar la carpeta de trabajo del explorador</li>
+            <li><strong>Escribir código:</strong> En el editor central (archivos <code>.py</code>)</li>
+            <li><strong>Ejecutar:</strong> <code>Ctrl+Enter</code> o «🚀 Ejecutar Código» — lanza el programa entero en el terminal</li>
+            <li><strong>Revisar errores:</strong> Pestaña <strong>Problems</strong> (sidebar o panel inferior) tras ~1 s sin escribir</li>
+            <li><strong>Interactuar:</strong> Si el programa pide datos, escríbelos en la caja inferior del terminal</li>
         </ol>
         
         <div style="background-color: #D5DBDB; padding: 15px; border-radius: 5px; margin: 15px 0;">
@@ -191,7 +201,7 @@ class DocumentationDialog(QDialog):
         
         <h3 style="color: #E74C3C;">📁 Carpeta de trabajo</h3>
         <ul>
-            <li>La ruta de la carpeta del explorador aparece en la barra superior, junto a «Ejecútalo!»</li>
+            <li>La ruta de la carpeta del explorador aparece en la barra superior, junto a «Ejecútate!»</li>
             <li>Al abrir archivos desde el explorador no se muestran ventanas de confirmación</li>
         </ul>
         
@@ -227,6 +237,32 @@ class DocumentationDialog(QDialog):
             <li><strong>Motores Disponibles:</strong> Manual, autopep8, black</li>
         </ul>
         
+        <h3 style="color: #E74C3C;">⚠️ Problems (errores y avisos)</h3>
+        <p>Disponible en el <strong>sidebar</strong> (icono ! en la Activity Bar) y en el <strong>panel inferior</strong> (pestaña Problems).</p>
+        <ul>
+            <li><strong>ERROR:</strong> Sintaxis inválida (p. ej. paréntesis sin cerrar, falta <code>:</code>)</li>
+            <li><strong>WARNING / INFO:</strong> Tras ~2,5 s sin escribir: imports no usados, variables sin usar, líneas largas, etc.</li>
+            <li><strong>Badge:</strong> El icono Problems muestra el número de problemas del archivo actual</li>
+            <li><strong>Salto:</strong> Doble clic en un ítem → cursor en esa línea/columna</li>
+            <li><strong>Solo Python:</strong> No analiza <code>.md</code> ni <code>.txt</code></li>
+            <li><strong>No incluye:</strong> Errores al ejecutar (esos aparecen en el Terminal)</li>
+        </ul>
+        
+        <h3 style="color: #E74C3C;">📋 Outline (estructura del archivo)</h3>
+        <ul>
+            <li>Sidebar → pestaña <strong>Outline</strong> o icono en la Activity Bar</li>
+            <li>Lista <strong>clases</strong> y <strong>funciones</strong> del <code>.py</code> activo</li>
+            <li>Doble clic en un símbolo → salta a esa línea</li>
+        </ul>
+        
+        <h3 style="color: #E74C3C;">💡 Autocompletado contextual</h3>
+        <ul>
+            <li>Sugerencias de palabras clave, builtins y snippets mientras escribes</li>
+            <li><code>Tab</code> o <code>Enter</code> para aceptar; <code>Escape</code> para cerrar</li>
+            <li>En líneas <code>import …</code> no sugiere builtins confusos (p. ej. <code>os</code> ≠ <code>OSError</code>)</li>
+            <li>Se cierra al aceptar una sugerencia o al hacer clic fuera del editor</li>
+        </ul>
+        
         <h3 style="color: #E74C3C;">🔍 Búsqueda y Reemplazo</h3>
         <ul>
             <li><strong>Buscar:</strong> <code>Ctrl+F</code> - Busca texto en el archivo actual</li>
@@ -240,85 +276,118 @@ class DocumentationDialog(QDialog):
         """
         return self.create_scrollable_content(content)
     
+    def create_interface_tab(self):
+        """Crea la pestaña de interfaz (Activity Bar, paneles, Modo Café)"""
+        content = """
+        <h2 style="color: #2C3E50;">🖥️ Interfaz del Editor</h2>
+        
+        <p>La disposición recuerda a editores como <strong>Cursor</strong> o <strong>VS Code</strong>: barra lateral de iconos, sidebar con pestañas y panel inferior opcional.</p>
+        
+        <h3 style="color: #8E44AD;">📐 Layout general</h3>
+        <ul>
+            <li><strong>Barra superior:</strong> título «Ejecútate!», ruta de la carpeta de trabajo y botón <strong>☕</strong> (Modo Café)</li>
+            <li><strong>Activity Bar</strong> (iconos verticales a la izquierda)</li>
+            <li><strong>Sidebar</strong> (panel junto al editor, según el icono activo)</li>
+            <li><strong>Editor central</strong> con pestañas de archivos</li>
+            <li><strong>Panel inferior</strong> (Terminal, Problems, ayuda) — se puede ocultar</li>
+            <li><strong>Barra de estado:</strong> línea/columna, tema y, con Pomodoro, cuenta atrás <code>☕ MM:SS</code></li>
+        </ul>
+        
+        <h3 style="color: #8E44AD;">🧭 Activity Bar</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+            <tr style="background-color: #f8f9fa;">
+                <th style="border: 1px solid #dee2e6; padding: 8px;">Icono</th>
+                <th style="border: 1px solid #dee2e6; padding: 8px;">Vista en sidebar</th>
+            </tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Explorer</td><td style="border: 1px solid #dee2e6; padding: 8px;">Árbol de archivos de la carpeta de trabajo</td></tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Search</td><td style="border: 1px solid #dee2e6; padding: 8px;">Búsqueda en carpeta con resultados clicables</td></tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Problems (!)</td><td style="border: 1px solid #dee2e6; padding: 8px;">Errores y avisos del archivo; badge con el conteo</td></tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Outline</td><td style="border: 1px solid #dee2e6; padding: 8px;">Clases y funciones del Python activo</td></tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Aprendizaje</td><td style="border: 1px solid #dee2e6; padding: 8px;">Accesos a Tutoriales, Debugger, Paquetes y Análisis (F4–F7)</td></tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Terminal</td><td style="border: 1px solid #dee2e6; padding: 8px;">Enfoca el panel inferior en la pestaña Terminal</td></tr>
+            <tr><td style="border: 1px solid #dee2e6; padding: 8px;">Settings</td><td style="border: 1px solid #dee2e6; padding: 8px;">Abre Preferencias</td></tr>
+        </table>
+        
+        <h3 style="color: #8E44AD;">⬇️ Panel inferior</h3>
+        <ul>
+            <li><strong>Mostrar/ocultar:</strong> <code>Ctrl+`</code> o Vista → Panel inferior</li>
+            <li><strong>Cerrar:</strong> botón <strong>✕</strong> en la cabecera del panel — el editor ocupa todo el alto</li>
+            <li><strong>Pestañas:</strong> Terminal (salida y comandos), Problems (misma lista que en sidebar), ayuda contextual</li>
+            <li><strong>Ejecutar código:</strong> <code>Ctrl+Enter</code> abre el panel y enfoca el Terminal si estaba cerrado</li>
+        </ul>
+        
+        <h3 style="color: #8E44AD;">☕ Modo Café y Pomodoro</h3>
+        <ul>
+            <li><strong>Activar pausa manual:</strong> botón <strong>☕</strong> en la barra superior o <code>Ctrl+Alt+C</code></li>
+            <li>Overlay con taza y mensaje; la UI se desbloquea al mover el ratón o pulsar una tecla</li>
+            <li><strong>Pomodoro</strong> (Preferencias → ☕ Café): descansos automáticos cada X minutos</li>
+            <li>Barra de estado: <code>☕ MM:SS</code> hasta el próximo descanso</li>
+            <li>Durante el descanso: overlay con <code>Descanso: MM:SS</code></li>
+        </ul>
+        
+        <h3 style="color: #8E44AD;">⌨️ Navegación rápida</h3>
+        <ul>
+            <li><strong>Quick Open:</strong> <code>Ctrl+P</code> — archivos recientes</li>
+            <li><strong>Command Palette:</strong> <code>Ctrl+Shift+P</code></li>
+            <li><strong>Explorador:</strong> <code>F3</code> mostrar/ocultar sidebar del explorador</li>
+        </ul>
+        
+        <div style="background-color: #E8F6F3; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <strong>💡 Consejo:</strong> Usa <strong>Outline</strong> en archivos largos y <strong>Problems</strong> mientras escribes para corregir la sintaxis antes de ejecutar.
+        </div>
+        """
+        return self.create_scrollable_content(content)
+    
     def create_terminal_tab(self):
         """Crea la pestaña del terminal"""
         content = """
         <h2 style="color: #2C3E50;">💻 Terminal Integrado</h2>
         
-        <h3 style="color: #8E44AD;">🔄 Tipos de Shell</h3>
-        <p>El terminal soporta diferentes tipos de intérpretes:</p>
+        <h3 style="color: #8E44AD;">🚀 Ejecutar desde el editor</h3>
+        <p><code>Ctrl+Enter</code> o el botón <strong>🚀 Ejecutar Código</strong> lanza <strong>todo el programa</strong>, no línea a línea:</p>
         <ul>
-            <li><strong>🐍 Python3 Interactivo:</strong> Para ejecutar código Python línea por línea</li>
-            <li><strong>🛠️ Bash:</strong> Para comandos del sistema (ls, cd, mkdir, etc.)</li>
-            <li><strong>📜 Python3:</strong> Para ejecutar scripts Python completos</li>
+            <li><strong>Archivo guardado:</strong> <code>cd carpeta && python archivo.py</code> en el shell integrado (Bash)</li>
+            <li><strong>Sin guardar:</strong> se crea un <code>.py</code> temporal en la carpeta de trabajo y se ejecuta entero</li>
+            <li><strong>Cambios sin guardar:</strong> se guarda automáticamente antes de ejecutar (si la pestaña tiene ruta)</li>
+            <li><strong>Scripts interactivos</strong> (menús, <code>input()</code>, Rich…): escribe en la <strong>caja inferior</strong> del terminal y pulsa Enter</li>
+            <li><strong>TUIs a pantalla completa</strong> (p. ej. Textual): mejor usar <code>Ctrl+Alt+T</code> (terminal del sistema)</li>
         </ul>
         
-        <h3 style="color: #8E44AD;">🚀 Ejecutar Código</h3>
-        <p>Toda la ejecución se realiza a través del terminal integrado para máxima interactividad:</p>
+        <h3 style="color: #8E44AD;">🔄 Shell y caja de comandos</h3>
+        <p>El desplegable del terminal permite elegir <strong>Python</strong>, <strong>Bash</strong>, Zsh, etc. La <strong>caja inferior</strong> envía comandos al shell activo.</p>
         <ul>
-            <li><strong>Desde el Editor:</strong> <code>Ctrl+Enter</code> o botón "🚀 Ejecutar Código"</li>
-            <li><strong>Directamente en Terminal:</strong> Escribe código en el campo de entrada y presiona <code>Enter</code></li>
+            <li><strong>Modo Limpio / Interactivo / Auto-detect:</strong> solo afectan a comandos que <em>tú</em> escribes a mano, no al botón Ejecutar del editor</li>
+            <li><strong>Precapturar inputs:</strong> diálogo para rellenar <code>input()</code> antes de lanzar (scripts simples)</li>
+            <li><strong>Limpiar / Reiniciar:</strong> botones en la barra del terminal</li>
         </ul>
         
-        <h3 style="color: #8E44AD;">🔤 Comandos de Terminal</h3>
-        <h4>En modo Python:</h4>
+        <h3 style="color: #8E44AD;">🔤 Ejemplos en la caja de comandos</h3>
+        <h4>Con shell Python:</h4>
         <div style="background-color: #f8f9fa; padding: 10px; border-left: 4px solid #28a745; margin: 10px 0;">
             <code>print("¡Hola mundo!")</code><br>
-            <code>x = 5 + 3</code><br>
-            <code>for i in range(5): print(i)</code><br>
-            <code>import os; print(os.getcwd())</code>
+            <code>x = 5 + 3</code>
         </div>
         
-        <h4>En modo Bash:</h4>
+        <h4>Con shell Bash:</h4>
         <div style="background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin: 10px 0;">
             <code>ls -la</code><br>
             <code>pwd</code><br>
-            <code>mkdir mi_proyecto</code><br>
-            <code>echo "Hola desde bash"</code><br>
-            <code>nano archivo.txt</code> (Editor de texto en terminal)<br>
-            <code>grep -r "texto" .</code> (Buscar en archivos)
+            <code>python3 mi_script.py</code>
         </div>
-        
-        <h3 style="color: #8E44AD;">🖥️ Aplicaciones Gráficas</h3>
-        <p>El terminal soporta tanto comandos de consola como aplicaciones gráficas:</p>
-        <ul>
-            <li><strong>✅ Aplicaciones de terminal:</strong> nano, vim, htop, curl, wget, git</li>
-            <li><strong>✅ Aplicaciones gráficas:</strong> gedit, firefox, calculator, file managers</li>
-            <li><strong>✅ Herramientas de desarrollo:</strong> code, atom, sublime (si están instaladas)</li>
-        </ul>
-        
-        <div style="background-color: #E3F2FD; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <strong>💡 Consejo para Aplicaciones Gráficas:</strong> El terminal preserva las variables de entorno necesarias para ejecutar aplicaciones gráficas como gedit, calculadora, navegadores, etc.
-        </div>
-        
-        <h3 style="color: #8E44AD;">💬 Input Interactivo</h3>
-        <p>Cuando tu código Python usa <code>input()</code>:</p>
-        <ol>
-            <li>Aparece el prompt en el terminal</li>
-            <li>Se abre un cuadro de diálogo para introducir datos</li>
-            <li>Tu respuesta se envía automáticamente al programa</li>
-            <li>El código continúa ejecutándose normalmente</li>
-        </ol>
         
         <h3 style="color: #8E44AD;">⚙️ Controles del Terminal</h3>
         <ul>
-            <li><strong>🗑️ Limpiar:</strong> Borra toda la salida del terminal</li>
-            <li><strong>🔄 Reiniciar:</strong> Reinicia completamente el intérprete</li>
-            <li><strong>Cambiar Shell:</strong> Usa el dropdown para cambiar entre Python y Bash</li>
-            <li><strong>🖥️ Terminal del Sistema:</strong> <code>Ctrl+Alt+T</code> o Menú → Vista → Abrir Terminal del Sistema</li>
+            <li><strong>🗑️ Limpiar:</strong> Borra la salida visible</li>
+            <li><strong>🔄 Reiniciar:</strong> Reinicia el shell</li>
+            <li><strong>Cambiar Shell:</strong> Desplegable en la barra del terminal</li>
+            <li><strong>🖥️ Terminal del Sistema:</strong> <code>Ctrl+Alt+T</code> — terminal nativa del SO (recomendada para proyectos con venv propio o TUI)</li>
         </ul>
         
-        <div style="background-color: #E8F8F5; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <strong>💡 Consejo:</strong> Usa la opción "Terminal del Sistema" para acceder a la terminal nativa de tu sistema operativo (CMD/PowerShell en Windows, Terminal en macOS, o tu terminal favorito en Linux).
-        </div>
-        
         <div style="background-color: #FFF3CD; padding: 15px; border-radius: 5px; margin: 15px 0;">
-            <strong>⚠️ Importante:</strong> 
+            <strong>⚠️ Importante:</strong>
             <ul>
-                <li>En Python: usa comandos Python (print, input, import, etc.)</li>
-                <li>En Bash: usa comandos del sistema (ls, cd, echo, etc.)</li>
-                <li>No mezcles tipos de comandos en el mismo modo</li>
-                <li>Para editar archivos: usa <code>nano</code> (terminal) o <code>gedit</code> (gráfico)</li>
+                <li>Los errores de <strong>ejecución</strong> aparecen aquí, no en Problems</li>
+                <li>Abre la <strong>carpeta del proyecto</strong> (<code>Ctrl+Shift+O</code>) antes de ejecutar scripts que usan <code>__file__</code> o archivos relativos</li>
             </ul>
         </div>
         """
@@ -330,6 +399,9 @@ class DocumentationDialog(QDialog):
         <h2 style="color: #2C3E50;">🎓 Funciones de Aprendizaje</h2>
         
         <p>El editor incluye <strong>5 funcionalidades educativas especiales</strong> diseñadas para ayudar a principiantes a aprender Python de manera efectiva.</p>
+        
+        <h3 style="color: #8E44AD;">🧭 Acceso rápido (sidebar Aprendizaje)</h3>
+        <p>En la <strong>Activity Bar</strong> → icono <strong>Aprendizaje</strong> tienes botones para abrir cada herramienta sin memorizar solo los atajos.</p>
         
         <h3 style="color: #8E44AD;">🔍 Análisis de Código en Tiempo Real (F7)</h3>
         <p>Obtén feedback inmediato mientras escribes código:</p>
@@ -351,44 +423,33 @@ class DocumentationDialog(QDialog):
         </div>
         
         <h3 style="color: #8E44AD;">💡 Autocompletado Inteligente</h3>
-        <p>Sugerencias contextuales con explicaciones educativas:</p>
+        <p>Sugerencias mientras escribes en el editor (palabras clave, builtins, snippets). Complementa el panel <strong>Problems</strong>, que muestra errores de sintaxis tras una breve pausa al escribir.</p>
         <ul>
-            <li><strong>17 funciones built-in</strong> con ejemplos (print, input, len, etc.)</li>
-            <li><strong>15 palabras clave</strong> de Python con explicaciones (if, for, def, etc.)</li>
-            <li><strong>10 snippets</strong> de código común predefinidos</li>
-            <li><strong>Ejemplos prácticos</strong> para cada sugerencia</li>
+            <li>Palabras clave y funciones built-in con descripción breve</li>
+            <li>Snippets comunes (<code>def</code>, <code>class</code>, <code>if</code>, …)</li>
+            <li><code>Escape</code> cierra la lista; no confundir con Problems</li>
         </ul>
         
         <h3 style="color: #8E44AD;">📚 Tutoriales Interactivos (F4)</h3>
-        <p>Aprende Python paso a paso con tutoriales guiados:</p>
+        <p>Aprende Python paso a paso con <strong>17 tutoriales</strong> ordenados del nivel básico al experto:</p>
         
-        <h4>📖 Tutoriales Disponibles:</h4>
-        <ol>
-            <li><strong>"Primeros pasos con Python"</strong> (Principiante - 4 pasos)
-                <ul>
-                    <li>Hola mundo y función print()</li>
-                    <li>Variables y tipos de datos</li>
-                    <li>Operaciones matemáticas básicas</li>
-                    <li>Entrada de usuario con input()</li>
-                </ul>
-            </li>
-            <li><strong>"Estructuras de control"</strong> (Principiante - 4 pasos)
-                <ul>
-                    <li>Decisiones con if/else</li>
-                    <li>Múltiples condiciones con elif</li>
-                    <li>Bucles con for</li>
-                    <li>Bucles con while</li>
-                </ul>
-            </li>
-            <li><strong>"Listas y funciones"</strong> (Intermedio - 4 pasos)
-                <ul>
-                    <li>Trabajando con listas</li>
-                    <li>Modificando listas</li>
-                    <li>Creando funciones</li>
-                    <li>Funciones que retornan valores</li>
-                </ul>
-            </li>
-        </ol>
+        <h4>🟢 Principiante</h4>
+        <ul>
+            <li>Primeros pasos con Python · Strings y texto · Diccionarios · Estructuras de control</li>
+        </ul>
+        <h4>🟡 Intermedio</h4>
+        <ul>
+            <li>Listas y funciones · Tuplas y conjuntos · Archivos · Errores · Módulos · Comprensiones</li>
+        </ul>
+        <h4>🟠 Avanzado</h4>
+        <ul>
+            <li>POO · Herencia · Context managers · Generadores</li>
+        </ul>
+        <h4>🔴 Experto</h4>
+        <ul>
+            <li>Decoradores · Async/await · Type hints y dataclasses</li>
+        </ul>
+        <p>En el diálogo F4 los tutoriales aparecen agrupados por nivel; empieza por los de principiante.</p>
         
         <h3 style="color: #8E44AD;">🐛 Debugger Visual (F5)</h3>
         <p>Ejecuta tu código paso a paso para entender cómo funciona:</p>
@@ -400,23 +461,15 @@ class DocumentationDialog(QDialog):
         </ul>
         
         <h3 style="color: #8E44AD;">📦 Gestor de Paquetes Visual (F6)</h3>
-        <p>Instala y gestiona paquetes Python de forma fácil:</p>
+        <p>Instala y gestiona paquetes Python con un catálogo de <strong>más de 40 librerías</strong> habituales:</p>
         <ul>
-            <li><strong>15 paquetes populares</strong> curados para principiantes</li>
-            <li><strong>Instalación con un clic</strong></li>
-            <li><strong>Información detallada</strong> de cada paquete</li>
-            <li><strong>Ejemplos de uso</strong> incluidos</li>
+            <li><strong>Web:</strong> requests, httpx, flask, django, fastapi, beautifulsoup4, selenium…</li>
+            <li><strong>Datos y ciencia:</strong> pandas, numpy, scipy, scikit-learn, openpyxl</li>
+            <li><strong>GUI y terminal:</strong> PySide6, rich, textual, customtkinter</li>
+            <li><strong>Datos y persistencia:</strong> sqlalchemy (ORM), pymongo, psycopg2-binary (drivers/clientes)</li>
+            <li><strong>Desarrollo:</strong> pytest, black, ruff, mypy, autopep8</li>
+            <li>Filtro por categoría, ejemplos de código e instalación con un clic</li>
         </ul>
-        
-        <div style="background-color: #E3F2FD; padding: 10px; border-left: 4px solid #2196F3; margin: 10px 0;">
-            <strong>🌟 Paquetes destacados incluidos:</strong><br>
-            📊 matplotlib - Crear gráficos<br>
-            🌐 requests - Peticiones web<br>
-            📈 pandas - Análisis de datos<br>
-            🔢 numpy - Matemáticas<br>
-            🖼️ pillow - Manipular imágenes<br>
-            🎮 pygame - Crear juegos
-        </div>
         
         <h3 style="color: #8E44AD;">🚀 Cómo Empezar</h3>
         <ol>
@@ -433,7 +486,7 @@ class DocumentationDialog(QDialog):
         <h3 style="color: #8E44AD;">🎯 Beneficios Educativos</h3>
         <ul>
             <li><strong>Aprendizaje activo:</strong> Feedback inmediato mientras programas</li>
-            <li><strong>Progresión estructurada:</strong> Tutoriales del nivel básico al intermedio</li>
+            <li><strong>Progresión estructurada:</strong> 17 tutoriales del nivel principiante al experto</li>
             <li><strong>Comprensión profunda:</strong> Ve cómo se ejecuta tu código paso a paso</li>
             <li><strong>Herramientas reales:</strong> Aprende a usar paquetes populares</li>
             <li><strong>Buenas prácticas:</strong> Sugerencias basadas en estándares de Python</li>
@@ -448,10 +501,25 @@ class DocumentationDialog(QDialog):
         
         <h3 style="color: #F39C12;">📁 Explorador de Archivos</h3>
         <ul>
-            <li><strong>Mostrar/Ocultar:</strong> <code>F3</code> o Menú → Vista → Explorador de Archivos</li>
-            <li><strong>Navegar Carpetas:</strong> Click en carpetas para expandir/contraer</li>
-            <li><strong>Abrir Archivo:</strong> Doble click en un archivo Python</li>
-            <li><strong>Actualizar:</strong> Botón de actualización para ver cambios</li>
+            <li><strong>Mostrar/Ocultar:</strong> <code>F3</code> o Activity Bar → Explorer</li>
+            <li><strong>Abrir carpeta de trabajo:</strong> <code>Ctrl+Shift+O</code> — la ruta aparece en la barra superior</li>
+            <li><strong>Iconos por tipo:</strong> Python, Markdown, JSON, imágenes, etc.</li>
+            <li><strong>Abrir archivo:</strong> Doble clic (sin ventanas de confirmación)</li>
+            <li><strong>Primer archivo:</strong> reutiliza la pestaña vacía «Nuevo 1» si sigue sin contenido</li>
+        </ul>
+        
+        <h3 style="color: #F39C12;">⚠️ Problems y 📋 Outline</h3>
+        <ul>
+            <li><strong>Problems:</strong> sidebar + panel inferior; badge en Activity Bar</li>
+            <li><strong>Outline:</strong> navegación por símbolos del <code>.py</code> activo</li>
+            <li>Ver pestañas <strong>📝 Editor</strong> e <strong>🖥️ Interfaz</strong> para más detalle</li>
+        </ul>
+        
+        <h3 style="color: #F39C12;">☕ Modo Café y Pomodoro</h3>
+        <ul>
+            <li>Botón <strong>☕</strong> o <code>Ctrl+Alt+C</code></li>
+            <li>Configuración en Preferencias → pestaña <strong>☕ Café</strong></li>
+            <li>Pomodoro: intervalo de trabajo, duración del descanso y mensaje personalizado</li>
         </ul>
         
         <h3 style="color: #F39C12;">💾 Gestión de Sesiones</h3>
@@ -546,9 +614,9 @@ class DocumentationDialog(QDialog):
                 <th style="border: 1px solid #dee2e6; padding: 8px; text-align: left;">Atajo</th>
                 <th style="border: 1px solid #dee2e6; padding: 8px; text-align: left;">Función</th>
             </tr>
-            <tr>
+            <tr style="background-color: #f8f9fa;">
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Enter</code></td>
-                <td style="border: 1px solid #dee2e6; padding: 8px;">Ejecutar código en terminal integrado</td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Ejecutar programa completo en terminal (solo .py)</td>
             </tr>
             <tr style="background-color: #f8f9fa;">
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + L</code></td>
@@ -563,20 +631,28 @@ class DocumentationDialog(QDialog):
                 <th style="border: 1px solid #dee2e6; padding: 8px; text-align: left;">Función</th>
             </tr>
             <tr>
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + N</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Nueva pestaña vacía</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + T</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Nueva pestaña (alternativo)</td>
+            </tr>
+            <tr>
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + O</code></td>
                 <td style="border: 1px solid #dee2e6; padding: 8px;">Abrir archivo</td>
             </tr>
             <tr style="background-color: #f8f9fa;">
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Shift + O</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Abrir carpeta de trabajo</td>
+            </tr>
+            <tr>
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + S</code></td>
                 <td style="border: 1px solid #dee2e6; padding: 8px;">Guardar archivo</td>
             </tr>
-            <tr>
+            <tr style="background-color: #f8f9fa;">
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Shift + S</code></td>
                 <td style="border: 1px solid #dee2e6; padding: 8px;">Guardar como</td>
-            </tr>
-            <tr style="background-color: #f8f9fa;">
-                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + T</code></td>
-                <td style="border: 1px solid #dee2e6; padding: 8px;">Nueva pestaña</td>
             </tr>
             <tr>
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + W</code></td>
@@ -608,7 +684,7 @@ class DocumentationDialog(QDialog):
             </tr>
             <tr style="background-color: #f8f9fa;">
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>F3</code></td>
-                <td style="border: 1px solid #dee2e6; padding: 8px;">Buscar siguiente</td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Siguiente coincidencia (diálogo buscar) / mostrar explorador</td>
             </tr>
             <tr>
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Shift + F3</code></td>
@@ -640,15 +716,31 @@ class DocumentationDialog(QDialog):
             </tr>
             <tr>
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>F3</code></td>
-                <td style="border: 1px solid #dee2e6; padding: 8px;">Mostrar/ocultar explorador de archivos</td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Mostrar/ocultar explorador (sidebar)</td>
             </tr>
             <tr style="background-color: #f8f9fa;">
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + `</code></td>
-                <td style="border: 1px solid #dee2e6; padding: 8px;">Alternar entre salida y terminal</td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Mostrar/ocultar panel inferior</td>
             </tr>
             <tr>
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Shift + V</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Vista previa Markdown (solo .md)</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + P</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Quick Open (archivos recientes)</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Shift + P</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Command Palette</td>
+            </tr>
+            <tr style="background-color: #f8f9fa;">
                 <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Alt + T</code></td>
                 <td style="border: 1px solid #dee2e6; padding: 8px;">Abrir terminal del sistema operativo</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #dee2e6; padding: 8px;"><code>Ctrl + Alt + C</code></td>
+                <td style="border: 1px solid #dee2e6; padding: 8px;">Modo Café (pausa manual)</td>
             </tr>
         </table>
         

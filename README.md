@@ -1,8 +1,17 @@
-# 🐍 Ejecútalo! — Editor de Código Python
+# 🐍 Ejecútate! — Editor de Código Python
 
 <img width="1024" height="1024" alt="logo" src="https://github.com/user-attachments/assets/53caa94d-580f-45ce-af56-6e312500e30d" />
 
 Editor de código Python con arquitectura **MVC** e interfaz **PySide6**. Incluye terminal integrado, búsqueda avanzada, panel de problemas, temas personalizables, sistema educativo y utilidades para aprender Python sin morir en el intento.
+
+Ejecútate! no pretende sustituir a los grandes IDEs. Su objetivo es ofrecer un entorno sencillo para aprender, experimentar y practicar Python sin tener que configurar herramientas complejas.
+
+## ¿Para quién es?
+
+- Personas que empiezan con Python.
+- Estudiantes de cursos y certificados.
+- Usuarios que quieren un entorno sencillo para practicar.
+- Quien prefiera una herramienta ligera centrada en aprender.
 
 ## Inicio rápido
 
@@ -37,7 +46,12 @@ Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --inst
 - Formatter PEP 8 (autopep8 / black) y gestión de sesiones
 
 ### Aprendizaje (F4–F7)
-- Tutoriales interactivos, debugger visual, gestor de paquetes y analizador de código
+- **Tutoriales interactivos (F4)**: 17 tutoriales en 4 niveles (Principiante → Experto), ordenados del más básico al más avanzado
+- **Debugger visual (F5)**: ejecución paso a paso con inspección de variables
+- **Gestor de paquetes (F6)**: catálogo de ~48 librerías habituales con filtro por categoría e instalación con un clic
+- **Análisis de código (F7)**: sugerencias y avisos en tiempo real mientras escribes
+
+También accesibles desde el panel **Aprendizaje** del sidebar. Detalle en [`Docs/education.md`](./Docs/education.md).
 
 ## Atajos más usados
 
@@ -80,6 +94,6 @@ PySide6 · Pygments · markdown · autopep8 · black · isort
 
 ---
 
-🐍 **¡Editor de Python Ejecútate! — Básico pero coqueto** 🐍
+🐍 **¡Ejecútate! — Básico pero coqueto** 🐍
 
 *Desarrollado con pocas horas de sueño para la comunidad Python por entreunosyceros* ❤️
