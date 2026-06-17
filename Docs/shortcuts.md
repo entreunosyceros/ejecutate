@@ -41,6 +41,9 @@ Más detalle: [Archivos, pestañas y explorador](./files-and-tabs.md).
 - `F2`: Documentación
 - `F3`: Mostrar/ocultar explorador
 
+### Sidebar (vistas)
+- Activity Bar: Explorer / Search / Problems / Outline / Aprendizaje
+
 ### Ejecución
 - `Ctrl+Enter`: Ejecutar código en el **Terminal** (abre el panel si estaba cerrado; solo `.py`)
 - `Ctrl+L`: Limpiar salida (según panel activo)

@@ -65,6 +65,11 @@ En archivos `.py` el editor colorea:
 
 Los colores dependen del **tema** activo (Preferencias → Temas). El color base del texto no interfiere con el resaltado.
 
+## Problems y Outline (sidebar)
+
+- **Problems**: muestra errores/warnings del archivo actual y permite saltar a `Ln/Col`. El icono tiene un **badge** con el número de problemas.
+- **Outline**: lista clases y funciones del archivo Python actual y permite saltar a la línea correspondiente.
+
 ## Ver también
 
 - [Interfaz estilo Cursor](./ui-cursor.md)

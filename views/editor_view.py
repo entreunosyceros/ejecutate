@@ -297,6 +297,131 @@ class ProblemsPanel(QWidget):
             pass
 
 
+class OutlinePanel(QWidget):
+    """Outline del archivo actual (clases/funciones) con salto a línea."""
+
+    def __init__(self, parent_editor=None):
+        super().__init__(parent_editor.window if hasattr(parent_editor, "window") else None)
+        self.parent_editor = parent_editor
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        title = QLabel("Outline")
+        title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(title)
+
+        self.list = QListWidget()
+        self.list.itemActivated.connect(self._on_item_activated)
+        layout.addWidget(self.list, 1)
+
+        self._update_timer = QTimer(self)
+        self._update_timer.setSingleShot(True)
+        self._update_timer.setInterval(350)
+        self._update_timer.timeout.connect(self.refresh)
+
+    def schedule_refresh(self):
+        self._update_timer.stop()
+        self._update_timer.start()
+
+    def refresh(self):
+        self.list.clear()
+        if not self.parent_editor or not hasattr(self.parent_editor, "tabbed_editor"):
+            return
+
+        file_path = ""
+        try:
+            file_path = self.parent_editor.tabbed_editor.get_current_file_path() or ""
+        except Exception:
+            file_path = ""
+
+        # Solo Python: en otros tipos mostramos vacío (o hint)
+        if file_path and os.path.splitext(file_path)[1].lower() not in (".py", ".pyw", ".pyi"):
+            self.list.addItem("Outline disponible solo en Python")
+            return
+
+        editor = None
+        try:
+            editor = self.parent_editor.tabbed_editor.get_current_editor()
+        except Exception:
+            editor = None
+        if editor is None:
+            return
+
+        code = editor.toPlainText()
+        if not code.strip():
+            self.list.addItem("Sin símbolos")
+            return
+
+        try:
+            tree = ast.parse(code)
+        except Exception:
+            self.list.addItem("Outline: el archivo no parsea (hay errores)")
+            return
+
+        items = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                name = getattr(node, "name", "")
+                if not name:
+                    continue
+                ln = int(getattr(node, "lineno", 1) or 1)
+                kind = "class" if isinstance(node, ast.ClassDef) else "def"
+                items.append((ln, kind, name))
+
+        if not items:
+            self.list.addItem("Sin símbolos")
+            return
+
+        items.sort(key=lambda x: x[0])
+        for ln, kind, name in items[:500]:
+            it = QListWidgetItem(f"{kind} {name}  (Ln {ln})")
+            it.setData(Qt.ItemDataRole.UserRole, (ln, 0))
+            self.list.addItem(it)
+
+    def _on_item_activated(self, item):
+        try:
+            pos = item.data(Qt.ItemDataRole.UserRole)
+            if not pos or not self.parent_editor:
+                return
+            ln, col = pos
+            self.parent_editor.jump_to_line_col(int(ln), int(col))
+        except Exception:
+            pass
+
+
+class LearningSidebar(QWidget):
+    """Accesos directos a F4–F7 en una vista lateral."""
+
+    def __init__(self, parent_editor=None):
+        super().__init__()
+        self.parent_editor = parent_editor
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        title = QLabel("Aprendizaje")
+        title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(title)
+
+        btn_tutorials = QPushButton("📚 Tutoriales (F4)")
+        btn_debugger = QPushButton("🐛 Debugger (F5)")
+        btn_packages = QPushButton("📦 Paquetes (F6)")
+        btn_analysis = QPushButton("🔍 Análisis (F7)")
+
+        btn_tutorials.clicked.connect(lambda: getattr(self.parent_editor, "show_tutorials_dialog", lambda: None)())
+        btn_debugger.clicked.connect(lambda: getattr(self.parent_editor, "show_debugger_dialog", lambda: None)())
+        btn_packages.clicked.connect(lambda: getattr(self.parent_editor, "show_package_manager_dialog", lambda: None)())
+        btn_analysis.clicked.connect(lambda: getattr(self.parent_editor, "toggle_code_analysis", lambda: None)())
+
+        layout.addWidget(btn_tutorials)
+        layout.addWidget(btn_debugger)
+        layout.addWidget(btn_packages)
+        layout.addWidget(btn_analysis)
+        layout.addStretch()
+
+
 class SidebarSearchPanel(QWidget):
     """Panel de búsqueda embebido (estilo VS Code), sin usar diálogos modales."""
 
@@ -4322,7 +4447,6 @@ class TabbedCodeEditor(QTabWidget):
         self.setTabToolTip(tab_index, file_path)
         self._configure_editor_for_path(editor, file_path)
         self._convert_tab_to_markdown_if_needed(tab_index)
-        tab_index = self.currentIndex()
         self.update_tab_title(tab_index)
         self.setCurrentIndex(tab_index)
         return tab_index
@@ -5460,15 +5584,49 @@ class CodeEditorViewPySide:
                 b.setIconSize(QSize(20, 20))
             return b
 
+        def _mk_badged_btn(icon_path, tooltip, cb):
+            """Botón de activity bar con badge (contador) arriba a la derecha."""
+            wrapper = QWidget()
+            wrapper.setFixedWidth(44)
+            wrapper.setFixedHeight(38)
+            lay = QHBoxLayout(wrapper)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(0)
+
+            b = _mk_btn(icon_path, tooltip, cb)
+            lay.addWidget(b)
+
+            badge = QLabel("")
+            badge.setVisible(False)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedSize(18, 16)
+            badge.setStyleSheet(
+                "QLabel { background-color: #C74E39; color: white; border-radius: 8px; font-size: 10px; font-weight: 600; }"
+            )
+            badge.setParent(wrapper)
+            badge.move(44 - 18, 2)
+            return wrapper, b, badge
+
         base_dir = os.path.dirname(os.path.abspath(__file__))
         icons_dir = os.path.join(os.path.dirname(base_dir), "assets", "icons")
         self.act_explorer = _mk_btn(os.path.join(icons_dir, "explorer.svg"), "Explorer", lambda: self._set_sidebar_tab(0))
         self.act_search = _mk_btn(os.path.join(icons_dir, "search.svg"), "Search", lambda: self._set_sidebar_tab(1))
+        self._act_problems_wrapper, self.act_problems, self._act_problems_badge = _mk_badged_btn(
+            None, "Problems", lambda: self._set_sidebar_tab(2)
+        )
+        self.act_problems.setText("!")
+        self.act_outline = _mk_btn(None, "Outline", lambda: self._set_sidebar_tab(3))
+        self.act_outline.setText("≡")
+        self.act_learning = _mk_btn(None, "Aprendizaje", lambda: self._set_sidebar_tab(4))
+        self.act_learning.setText("🎓")
         self.act_terminal = _mk_btn(os.path.join(icons_dir, "terminal.svg"), "Terminal", self.toggle_terminal)
         self.act_settings = _mk_btn(os.path.join(icons_dir, "settings.svg"), "Settings", self.show_preferences_dialog)
 
         activity_layout.addWidget(self.act_explorer)
         activity_layout.addWidget(self.act_search)
+        activity_layout.addWidget(self._act_problems_wrapper)
+        activity_layout.addWidget(self.act_outline)
+        activity_layout.addWidget(self.act_learning)
         activity_layout.addWidget(self.act_terminal)
         activity_layout.addStretch()
         activity_layout.addWidget(self.act_settings)
@@ -5502,6 +5660,14 @@ class CodeEditorViewPySide:
         # Search (embebido)
         self.sidebar_search = SidebarSearchPanel(self)
         self.sidebar_tabs.addTab(self.sidebar_search, "Search")
+
+        # Problems / Outline / Aprendizaje
+        self.sidebar_problems = ProblemsPanel(self)
+        self.sidebar_tabs.addTab(self.sidebar_problems, "Problems")
+        self.sidebar_outline = OutlinePanel(self)
+        self.sidebar_tabs.addTab(self.sidebar_outline, "Outline")
+        self.sidebar_learning = LearningSidebar(self)
+        self.sidebar_tabs.addTab(self.sidebar_learning, "Aprendizaje")
 
         self.file_explorer_layout.addWidget(self.sidebar_tabs, 1)
         
@@ -5685,7 +5851,15 @@ class CodeEditorViewPySide:
 
     def _set_activity_active(self, btn: QToolButton):
         """Marca un botón del Activity Bar como activo visualmente."""
-        for b in (getattr(self, "act_explorer", None), getattr(self, "act_search", None), getattr(self, "act_terminal", None), getattr(self, "act_settings", None)):
+        for b in (
+            getattr(self, "act_explorer", None),
+            getattr(self, "act_search", None),
+            getattr(self, "act_problems", None),
+            getattr(self, "act_outline", None),
+            getattr(self, "act_learning", None),
+            getattr(self, "act_terminal", None),
+            getattr(self, "act_settings", None),
+        ):
             if b is None:
                 continue
             b.setProperty("active", "true" if b is btn else "false")
@@ -5701,8 +5875,14 @@ class CodeEditorViewPySide:
                 self.sidebar_tabs.setCurrentIndex(idx)
             if idx == 0:
                 self._set_activity_active(self.act_explorer)
-            else:
+            elif idx == 1:
                 self._set_activity_active(self.act_search)
+            elif idx == 2:
+                self._set_activity_active(self.act_problems)
+            elif idx == 3:
+                self._set_activity_active(self.act_outline)
+            elif idx == 4:
+                self._set_activity_active(self.act_learning)
         except Exception:
             pass
 
@@ -6005,16 +6185,83 @@ class CodeEditorViewPySide:
     def _on_tab_changed_status(self, _index):
         """Reengancha señales al cambiar de pestaña para actualizar status bar."""
         try:
+            # Desconectar señales anteriores para evitar duplicados
+            try:
+                prev = getattr(self, "_syntax_errors_connected_editor", None)
+                if prev is not None and hasattr(prev, "syntaxErrorsChanged"):
+                    prev.syntaxErrorsChanged.disconnect(self._on_syntax_errors_changed)
+            except Exception:
+                pass
+            try:
+                prev_o = getattr(self, "_outline_connected_editor", None)
+                if prev_o is not None:
+                    prev_o.textChanged.disconnect(self.sidebar_outline.schedule_refresh)
+            except Exception:
+                pass
+
             self.input_text = self.tabbed_editor.get_current_editor()
             if self.input_text:
                 self.input_text.cursorPositionChanged.connect(self._update_status_position)
                 if hasattr(self.input_text, "syntaxErrorsChanged"):
-                    self.input_text.syntaxErrorsChanged.connect(self.problems_panel.set_errors)
+                    self.input_text.syntaxErrorsChanged.connect(self._on_syntax_errors_changed)
+                    self._syntax_errors_connected_editor = self.input_text
+
+                # Outline: actualizar al editar
+                if hasattr(self, "sidebar_outline") and hasattr(self.input_text, "textChanged"):
+                    self.input_text.textChanged.connect(self.sidebar_outline.schedule_refresh)
+                    self._outline_connected_editor = self.input_text
+
+            try:
+                if hasattr(self, "sidebar_outline"):
+                    self.sidebar_outline.refresh()
+            except Exception:
+                pass
+
+            # Sincronizar panel de problemas/badge con estado actual
+            try:
+                current_errors = getattr(self.input_text, "current_syntax_errors", []) if self.input_text else []
+                self._on_syntax_errors_changed(current_errors)
+            except Exception:
+                pass
+
             self._update_status_position()
             # limpiar highlights de búsqueda al cambiar de pestaña
             self.set_search_highlights([])
             self._update_execute_button_state()
             self._update_markdown_preview_action()
+        except Exception:
+            pass
+
+    def _set_problems_badge(self, count: int):
+        """Actualiza el badge del botón Problems (activity bar)."""
+        try:
+            badge = getattr(self, "_act_problems_badge", None)
+            if badge is None:
+                return
+            count = max(0, int(count))
+            if count <= 0:
+                badge.setVisible(False)
+                badge.setText("")
+                return
+            badge.setText(str(min(count, 99)))
+            badge.setVisible(True)
+        except Exception:
+            pass
+
+    def _on_syntax_errors_changed(self, errors):
+        """Sincroniza Problems (panel inferior + sidebar) y badge."""
+        try:
+            if hasattr(self, "problems_panel"):
+                self.problems_panel.set_errors(errors)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "sidebar_problems"):
+                self.sidebar_problems.set_errors(errors)
+        except Exception:
+            pass
+        try:
+            self._set_problems_badge(len(errors or []))
         except Exception:
             pass
 

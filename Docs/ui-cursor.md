@@ -6,8 +6,8 @@
 ## Layout
 
 - **Barra superior**: título **Ejecútalo!**, ruta de la carpeta de trabajo del explorador y botón **☕** (Modo Café)
-- **Activity Bar** (izquierda): Explorer / Search / Terminal / Settings
-- **Sidebar**: pestañas **Explorer** y **Search**
+- **Activity Bar** (izquierda): Explorer / Search / Problems / Outline / Aprendizaje / Terminal / Settings
+- **Sidebar**: pestañas **Explorer**, **Search**, **Problems**, **Outline** y **Aprendizaje**
 - **Editor**: pestañas de archivos (indicador `•` si hay cambios sin guardar)
 - **Panel inferior**: **Terminal**, **Problems** y ayuda; se puede cerrar con **✕** o desde **Vista → Panel inferior** (`Ctrl+` `)
 - **Status bar**: posición Ln/Col, tema activo y, si Pomodoro está activo, cuenta atrás `☕ MM:SS` hasta el próximo descanso
@@ -30,7 +30,9 @@ Detalle del comportamiento de pestañas y explorador: [Archivos, pestañas y exp
 
 - **Explorer**: árbol de archivos con **iconos por tipo** (Python, Markdown, JSON, imágenes, etc.) y raíz configurable. Doble clic abre el archivo en el editor.
 - **Search**: panel embebido con resultados clicables y reemplazo
-- **Problems**: lista clicable de errores/warnings (salta a Ln/Col)
+- **Problems**: lista clicable de errores/warnings (salta a Ln/Col) + contador (badge) en el icono
+- **Outline**: símbolos del archivo Python (clases/funciones) con salto a línea
+- **Aprendizaje**: accesos a Tutoriales/Debugger/Paquetes/Análisis (F4–F7)
 
 ## Pestañas del editor
 
