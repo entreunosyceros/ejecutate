@@ -1163,8 +1163,11 @@ editar y ejecutar código Python con las siguientes características:<br><br>
 • <b>⚙️ Configuración de fuentes y colores</b><br>
 • <b>📝 Numeración de líneas</b><br>
 • <b>🔧 Formateo automático de código</b> (Ctrl+Alt+F)<br>
-• <b>🚀 Ejecución de código</b> (Ctrl+Enter)<br>
-• <b>💻 Ejecución en terminal integrado</b> (Ctrl+Shift+Enter)<br><br>
+• <b>💻 Terminal integrado</b> con intérpretes instalados (Python, Bash, Sh…) y ejecución de programas completos<br>
+• <b>🎓 Aprendizaje:</b> 17 tutoriales por nivel, debugger, gestor de paquetes y análisis (F4–F7)<br>
+• <b>⚠️ Problems y Outline</b> en sidebar y panel inferior<br>
+• <b>🎨 Preferencias</b> con temas y formatter; interfaz coherente con el tema elegido<br>
+• <b>🚀 Ejecución de código</b> (Ctrl+Enter)<br><br>
 
 Ideal para aprender Python, desarrollar scripts, prototipar ideas 
 y trabajar en proyectos pequeños y medianos.
@@ -5935,11 +5938,19 @@ class CodeEditorViewPySide:
 • Outline: clases y funciones con salto a línea
 
 💻 TERMINAL
-• Ejecutar lanza el archivo entero; programas interactivos: caja inferior + Enter
-• Ctrl+Alt+T → Terminal del sistema (proyectos con venv propio o TUI)
+• Ejecutar (Ctrl+Enter) lanza el programa entero en el shell integrado
+• Intérprete: solo shells instalados (Python, Bash, Sh/dash, Zsh, Fish…)
+• Caja inferior: comandos manuales e input() de programas interactivos
+• 🔄 Reiniciar actualiza la lista de intérpretes disponibles
+• Ctrl+Alt+T → Terminal del sistema (TUIs a pantalla completa)
 
 🧪 APRENDIZAJE (sidebar o F4–F7)
-• F4 Tutoriales · F5 Debugger · F6 Paquetes · F7 Análisis
+• F4 → 17 tutoriales por nivel (Principiante → Experto)
+• F5 Debugger · F6 Gestor de paquetes (~48 libs) · F7 Análisis en tiempo real
+
+⚙️ PREFERENCIAS (Ctrl+,)
+• Temas, fuentes, formatter PEP 8, Modo Café / Pomodoro
+• La ventana de preferencias usa los colores del tema activo
 
 💡 Tip: documentación completa en Ayuda → F2 o pestaña 🖥️ Interfaz en el diálogo.
 """

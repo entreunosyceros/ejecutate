@@ -44,9 +44,13 @@ Más detalle: [Archivos, pestañas y explorador](./files-and-tabs.md).
 ### Sidebar (vistas)
 - Activity Bar: Explorer / Search / Problems / Outline / Aprendizaje
 
-### Ejecución
-- `Ctrl+Enter`: Ejecutar código en el **Terminal** (abre el panel si estaba cerrado; solo `.py`)
+### Ejecución y terminal
+- `Ctrl+Enter`: Ejecutar programa completo en el **Terminal** (abre el panel si estaba cerrado; solo `.py`)
+- Selector **Intérprete** en el terminal: solo shells instalados (Python, Bash, Sh/dash, Zsh, Fish…)
+- `Ctrl+Alt+T`: Terminal nativa del SO (menú Vista)
 - `Ctrl+L`: Limpiar salida (según panel activo)
+
+Detalle: [Terminal integrado](./terminal.md)
 
 ### Markdown
 - `Ctrl+Shift+V`: Mostrar u ocultar **vista previa Markdown** (solo en pestañas `.md`)
@@ -76,6 +80,3 @@ Detalle: [Sistema educativo](./education.md) · [Añadir tutoriales](./adding-tu
   - Configurable: intervalo de trabajo y duración del descanso
 
 Detalle en [Modo Café](./coffee-mode.md).
-
-### Terminal del sistema
-- `Ctrl+Alt+T`: Abrir terminal nativa del SO (menú Vista)

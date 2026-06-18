@@ -66,6 +66,11 @@ En Python, cadenas entre comillas y comentarios `#` usan colores distintos al te
 - Botón **✕** en la cabecera del panel: cierra el panel
 - Al cerrar el panel, el **Editor** ocupa todo el alto disponible
 - Al ejecutar código (`Ctrl+Enter`) el panel se abre automáticamente en la pestaña Terminal
+- Pestaña **Terminal**: selector de intérprete (solo shells instalados), modos Limpio/Interactivo, caja de comandos
+- Pestaña **🌟 Características**: guía rápida integrada
+- Pestaña **Problems**: lista de errores/avisos del `.py` activo (también en el sidebar)
+
+Ver detalle del terminal en [Terminal integrado](./terminal.md).
 
 ## Markdown
 

@@ -159,7 +159,8 @@ class DocumentationDialog(QDialog):
             <li><strong>🎨 Resaltado de Sintaxis:</strong> Palabras clave, cadenas, comentarios y números con colores del tema</li>
             <li><strong>⚠️ Problems:</strong> Errores y avisos del archivo Python (salto a línea/columna)</li>
             <li><strong>📋 Outline:</strong> Clases y funciones del archivo actual con salto rápido</li>
-            <li><strong>💻 Terminal Integrado:</strong> Ejecuta el programa completo; programas interactivos usan la caja inferior</li>
+            <li><strong>💻 Terminal Integrado:</strong> Ejecuta el programa completo; intérpretes instalados (Python, Bash, Sh…); caja inferior para <code>input()</code></li>
+            <li><strong>🎨 Preferencias:</strong> Temas, fuentes, formatter y Modo Café — la ventana respeta el tema activo</li>
             <li><strong>☕ Modo Café / Pomodoro:</strong> Pausas con overlay y temporizador configurable</li>
             <li><strong>🔍 Búsqueda Avanzada:</strong> En archivo, reemplazo y búsqueda en carpeta</li>
             <li><strong>🎯 Formateo Automático:</strong> PEP 8 con autopep8 o black</li>
@@ -354,8 +355,12 @@ class DocumentationDialog(QDialog):
         </ul>
         
         <h3 style="color: #8E44AD;">🔄 Shell y caja de comandos</h3>
-        <p>El desplegable del terminal lista <strong>solo los intérpretes instalados</strong> en tu sistema (Python, Bash, Sh, Zsh, Fish…). La <strong>caja inferior</strong> envía comandos al shell activo.</p>
+        <p>El desplegable <strong>Intérprete</strong> lista <strong>solo shells instalados</strong> en tu equipo (Python del venv, Bash, Sh/dash, Zsh, Fish…). La <strong>caja inferior</strong> envía comandos al shell activo.</p>
         <ul>
+            <li><strong>Python:</strong> REPL interactivo para pruebas rápidas</li>
+            <li><strong>Bash:</strong> comandos de sistema y <code>python3 script.py</code></li>
+            <li><strong>Sh (dash):</strong> en Linux suele ser la shell POSIX por defecto; la app no usa flags incompatibles con dash</li>
+            <li><strong>Reiniciar (🔄):</strong> reinicia el shell y vuelve a detectar intérpretes instalados</li>
             <li><strong>Modo Limpio / Interactivo / Auto-detect:</strong> solo afectan a comandos que <em>tú</em> escribes a mano, no al botón Ejecutar del editor</li>
             <li><strong>Precapturar inputs:</strong> diálogo para rellenar <code>input()</code> antes de lanzar (scripts simples)</li>
             <li><strong>Limpiar / Reiniciar:</strong> botones en la barra del terminal</li>
@@ -368,7 +373,7 @@ class DocumentationDialog(QDialog):
             <code>x = 5 + 3</code>
         </div>
         
-        <h4>Con shell Bash:</h4>
+        <h4>Con shell Bash o Sh:</h4>
         <div style="background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin: 10px 0;">
             <code>ls -la</code><br>
             <code>pwd</code><br>
@@ -398,7 +403,7 @@ class DocumentationDialog(QDialog):
         content = """
         <h2 style="color: #2C3E50;">🎓 Funciones de Aprendizaje</h2>
         
-        <p>El editor incluye <strong>5 funcionalidades educativas especiales</strong> diseñadas para ayudar a principiantes a aprender Python de manera efectiva.</p>
+        <p>El editor incluye herramientas educativas integradas para aprender Python paso a paso.</p>
         
         <h3 style="color: #8E44AD;">🧭 Acceso rápido (sidebar Aprendizaje)</h3>
         <p>En la <strong>Activity Bar</strong> → icono <strong>Aprendizaje</strong> tienes botones para abrir cada herramienta sin memorizar solo los atajos.</p>
