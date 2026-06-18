@@ -1,7 +1,11 @@
 # 🐍 Ejecútate! — Editor de Código Python
-
+<p align="center">
 <img width="1024" height="1024" alt="logo" src="https://github.com/user-attachments/assets/53caa94d-580f-45ce-af56-6e312500e30d" />
+<br/>
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-documentación-6366F1)](https://deepwiki.com/entreunosyceros/ejecutate)
+</p>
 Editor de código Python con arquitectura **MVC** e interfaz **PySide6**. Incluye terminal integrado, búsqueda avanzada, panel de problemas, temas personalizables, sistema educativo y utilidades para aprender Python sin morir en el intento.
 
 Ejecútate! no pretende sustituir a los grandes IDEs. Su objetivo es ofrecer un entorno sencillo para aprender, experimentar y practicar Python sin tener que configurar herramientas complejas.
@@ -27,6 +31,8 @@ python3 run_app.py
 - lanza la aplicación con el Python del venv
 
 Si necesitas **reinstalar** dependencias manualmente: `python3 run_app.py --install-deps`
+
+En caso de ejecutar esta aplicación desde Windows, recuerda que en ese S.O. python3 no funciona, utiliza python.
 
 ## Qué incluye
 
@@ -94,6 +100,14 @@ Más atajos en [`Docs/shortcuts.md`](./Docs/shortcuts.md).
 | Arquitectura MVC | [`Docs/architecture.md`](./Docs/architecture.md) |
 | Modo Café | [`Docs/coffee-mode.md`](./Docs/coffee-mode.md) |
 | Añadir tutoriales | [`Docs/adding-tutorials.md`](./Docs/adding-tutorials.md) |
+| **Wiki (DeepWiki)** | [deepwiki.com/entreunosyceros/ejecutate](https://deepwiki.com/entreunosyceros/ejecutate) |
+
+## Licencia
+
+**Ejecútate!** se distribuye bajo **[GNU GPL v3](LICENSE)**.
+
+- **Estudios y uso personal:** puedes usarlo, estudiarlo y modificarlo con libertad.
+- **Trabajo o proyectos propios:** también puedes usarlo; si **redistribuyes** el programa o versiones modificadas, debes respetar la GPL (código abierto, misma licencia, aviso de cambios). Consulta el archivo [`LICENSE`](LICENSE) para el texto legal completo.
 
 ## Dependencias principales
 
