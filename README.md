@@ -6,6 +6,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-documentación-6366F1)](https://deepwiki.com/entreunosyceros/ejecutate)
 </p>
+
 Editor de código Python con arquitectura **MVC** e interfaz **PySide6**. Incluye terminal integrado, búsqueda avanzada, panel de problemas, temas personalizables, sistema educativo y utilidades para aprender Python sin morir en el intento.
 
 **Ejecútate! no pretende sustituir a los grandes IDEs**. Su objetivo es ofrecer un entorno sencillo para aprender, experimentar y practicar Python sin tener que configurar herramientas complejas.
