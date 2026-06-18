@@ -14,7 +14,7 @@ body:
       label: Área
       options:
         - Editor / pestañas / archivos
-        - Interfaz estilo Cursor (sidebar, activity bar, status bar)
+        - Interfaz del editor (sidebar, activity bar, status bar)
         - Markdown / documentación en editor
         - Terminal integrado
         - Búsqueda y reemplazo

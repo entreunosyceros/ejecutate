@@ -6,6 +6,7 @@ Este archivo contiene la nueva implementación del terminal
 
 import time
 import os
+import shutil
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
                                QLineEdit, QPushButton, QLabel, QComboBox, QInputDialog, QCheckBox,
                                QDialog, QFormLayout)
@@ -24,8 +25,94 @@ class IntegratedTerminalNew(QWidget):
         self.history_index = -1
         self.current_command = ""
         self.command_finished = True
+        self._shell_switch_pending = False
+        self._pending_shell_banner = None
         self.setup_ui()
         self.start_terminal()
+
+    def _available_interpreters(self):
+        """Intérpretes instalados en el sistema (solo rutas ejecutables)."""
+        venv_path = os.environ.get("VIRTUAL_ENV")
+        py_label = "🐍 Python (venv)" if venv_path else "🐍 Python"
+        py_exec = sys.executable or shutil.which("python3") or shutil.which("python")
+
+        specs = [
+            ("python", py_label, py_exec),
+            ("bash", "🐧 Bash", shutil.which("bash")),
+            ("zsh", "🐚 Zsh", shutil.which("zsh")),
+            ("fish", "🐟 Fish", shutil.which("fish")),
+            ("sh", "📱 Sh", shutil.which("sh")),
+        ]
+        available = []
+        for kind, label, path in specs:
+            if not path:
+                continue
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                resolved = os.path.realpath(path)
+                if kind == "sh":
+                    base = os.path.basename(resolved).lower()
+                    if base == "dash":
+                        label = "📱 Sh (dash)"
+                available.append((label, resolved, kind))
+        if not available and py_exec:
+            available.append((py_label, py_exec, "python"))
+        return available
+
+    def _populate_shell_combo(self):
+        """Rellena el selector solo con intérpretes disponibles."""
+        self.shell_combo.blockSignals(True)
+        previous_kind = self._shell_kind()
+        self.shell_combo.clear()
+        for label, path, kind in self._available_interpreters():
+            self.shell_combo.addItem(label, {"path": path, "kind": kind})
+        if previous_kind:
+            for i in range(self.shell_combo.count()):
+                if self._shell_kind(i) == previous_kind:
+                    self.shell_combo.setCurrentIndex(i)
+                    break
+        self.shell_combo.blockSignals(False)
+
+    def _shell_meta(self, index=None):
+        if index is None:
+            index = self.shell_combo.currentIndex()
+        if index < 0:
+            return None
+        data = self.shell_combo.itemData(index)
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, str):
+            kind = "python" if "python" in os.path.basename(data).lower() else "shell"
+            return {"path": data, "kind": kind}
+        return None
+
+    def _shell_path(self, index=None):
+        meta = self._shell_meta(index)
+        return meta.get("path") if meta else None
+
+    def _shell_kind(self, index=None):
+        meta = self._shell_meta(index)
+        return meta.get("kind") if meta else None
+
+    def _python_combo_index(self):
+        for i in range(self.shell_combo.count()):
+            if self._shell_kind(i) == "python":
+                return i
+        return 0
+
+    def _bash_combo_index(self) -> int | None:
+        for i in range(self.shell_combo.count()):
+            if self._shell_kind(i) == "bash":
+                return i
+        return None
+
+    def _is_python_repl_shell(self) -> bool:
+        return self._shell_kind() == "python"
+
+    def _set_shell_combo_index(self, index: int):
+        self.shell_combo.blockSignals(True)
+        self.shell_combo.setCurrentIndex(index)
+        self.shell_combo.blockSignals(False)
+        self.change_shell()
 
     def setup_ui(self):
         """Configura la interfaz del terminal (versión corregida)"""
@@ -34,19 +121,12 @@ class IntegratedTerminalNew(QWidget):
 
         # Intérprete
         self.shell_combo = QComboBox()
-        py_exec = sys.executable or 'python'
-        # Intentar detectar venv explícito
-        venv_path = os.environ.get('VIRTUAL_ENV')
-        py_label = "🐍 Python (venv)" if venv_path else "🐍 Python"
-        for text, data in [
-            (py_label, py_exec),
-            ("🐧 Bash", "/bin/bash"),
-            ("🐚 Zsh", "/bin/zsh"),
-            ("🐟 Fish", "/usr/bin/fish"),
-            ("📱 Sh", "/bin/sh")
-        ]:
-            self.shell_combo.addItem(text, data)
-        self.shell_combo.currentTextChanged.connect(self.change_shell)
+        self._populate_shell_combo()
+        self.shell_combo.setToolTip(
+            "Solo aparecen intérpretes instalados en este equipo "
+            "(detectados con PATH y rutas del sistema)."
+        )
+        self.shell_combo.currentIndexChanged.connect(self._on_shell_index_changed)
 
         # Botones básicos
         self.clear_btn = QPushButton("🗑️ Limpiar")
@@ -158,19 +238,98 @@ class IntegratedTerminalNew(QWidget):
         layout.addWidget(self.status_label)
         self.setLayout(layout)
 
-    def _stop_process(self, wait_ms: int = 3000):
+    def _stop_process(self, wait_ms: int = 800):
         """Detiene el QProcess del shell si sigue en ejecución."""
         proc = self.process
         if not proc:
             return
         try:
             if proc.state() == QProcess.ProcessState.Running:
-                proc.terminate()
-                if not proc.waitForFinished(wait_ms):
-                    proc.kill()
-                    proc.waitForFinished(1000)
+                proc.kill()
+                proc.waitForFinished(wait_ms)
         except Exception:
             pass
+
+    def _on_shell_index_changed(self, _index: int):
+        """Cambio de intérprete desde el combo (evita reentrada)."""
+        if self._shell_switch_pending:
+            return
+        self.change_shell()
+
+    def _shell_start_args(self, path: str, kind: str) -> list:
+        """Argumentos de arranque. dash/POSIX sh no admiten -i (solo bash/zsh)."""
+        if kind == "python":
+            return ["-i", "-u"]
+        if kind == "fish":
+            return []
+        real_base = os.path.basename(os.path.realpath(path)).lower()
+        if real_base == "dash" or kind == "sh":
+            return []
+        if real_base in ("bash", "zsh") or kind in ("bash", "zsh"):
+            return ["-i"]
+        return []
+
+    def _launch_shell(self) -> bool:
+        """Arranca el intérprete seleccionado (entorno configurado antes de start)."""
+        if not self.process:
+            return False
+
+        path = self._shell_path()
+        kind = self._shell_kind()
+        shell_name = self.shell_combo.currentText()
+
+        if not path or not os.path.isfile(path) or not os.access(path, os.X_OK):
+            self.terminal_output.append(f"❌ Intérprete no disponible: {path or shell_name}")
+            self.status_label.setText("🔴 Intérprete no disponible")
+            self.status_label.setStyleSheet("color: #E74C3C; font-weight: bold;")
+            return False
+
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("PYTHONIOENCODING", "utf-8")
+        env.insert("TERM", "xterm-256color")
+        env.insert("COLUMNS", "80")
+        env.insert("LINES", "24")
+        if kind == "bash":
+            env.insert("PS1", r"\u@\h:\w$ ")
+        elif kind == "zsh":
+            env.insert("PS1", "%n@%m:%~ %# ")
+
+        self.process.setProcessEnvironment(env)
+        self._pending_shell_banner = shell_name
+        self.process.start(path, self._shell_start_args(path, kind))
+        return True
+
+    def _finish_shell_change(self):
+        """Continúa el cambio de intérprete tras cerrar el proceso anterior (sin bloquear la GUI)."""
+        if not self._shell_switch_pending:
+            return
+        if self.process and self.process.state() == QProcess.ProcessState.Running:
+            QTimer.singleShot(100, self._finish_shell_change)
+            return
+        try:
+            self._launch_shell()
+        except Exception as e:
+            self.terminal_output.append(f"❌ Error al cambiar shell: {str(e)}")
+        finally:
+            self._shell_switch_pending = False
+
+    def change_shell(self):
+        """Cambia el shell del terminal de forma segura."""
+        if self._shell_switch_pending:
+            return
+        try:
+            if not self.process:
+                self.start_terminal()
+                return
+
+            self._shell_switch_pending = True
+            if self.process.state() == QProcess.ProcessState.Running:
+                self.process.kill()
+            QTimer.singleShot(120, self._finish_shell_change)
+        except Exception as e:
+            self._shell_switch_pending = False
+            self.terminal_output.append(f"❌ Error al cambiar shell: {str(e)}")
 
     def shutdown_terminal(self, wait_ms: int = 2000):
         """Cierra el shell de forma segura antes de destruir el widget."""
@@ -203,50 +362,23 @@ class IntegratedTerminalNew(QWidget):
             self.process.readyReadStandardError.connect(self.handle_stderr)
             self.process.finished.connect(self.handle_finished)
             self.process.started.connect(self.handle_started)
+            self.process.errorOccurred.connect(self.handle_process_error)
             
             self.change_shell()
             
         except Exception as e:
             self.terminal_output.append(f"❌ Error al inicializar terminal: {str(e)}")
 
-    def change_shell(self):
-        """Cambia el shell del terminal"""
-        try:
-            self._stop_process()
-            
-            shell_data = self.shell_combo.currentData()
-            
-            if shell_data == sys.executable or shell_data.endswith('python') or shell_data.endswith('python3'):
-                self.process.start(shell_data, ["-i", "-u"])
-            else:
-                self.process.start(shell_data, ["-i"])
-            
-            # Configurar el entorno del proceso
-            env = QProcessEnvironment.systemEnvironment()
-            env.insert("PYTHONUNBUFFERED", "1")
-            env.insert("PYTHONIOENCODING", "utf-8")
-            
-            # Variables específicas para diferentes shells
-            if shell_data == "/bin/bash":
-                env.insert("PS1", "\\u@\\h:\\w$ ")
-            elif shell_data == "/bin/zsh":
-                env.insert("PS1", "%n@%m:%~ %# ")
-            
-            # Configurar variables básicas de terminal
-            env.insert("TERM", "xterm-256color")
-            env.insert("COLUMNS", "80")
-            env.insert("LINES", "24")
-            
-            self.process.setProcessEnvironment(env)
-            
-            # Limpiar salida y mostrar información inicial
-            self.terminal_output.clear()
+    def handle_process_error(self, error):
+        """Errores de arranque del intérprete (p. ej. ejecutable inexistente)."""
+        self._pending_shell_banner = None
+        if error == QProcess.ProcessError.FailedToStart:
             shell_name = self.shell_combo.currentText()
-            self.terminal_output.append(f"🚀 Iniciando {shell_name}...")
-            self.terminal_output.append("=" * 50)
-            
-        except Exception as e:
-            self.terminal_output.append(f"❌ Error al cambiar shell: {str(e)}")
+            self.terminal_output.append(
+                f"\n❌ No se pudo iniciar {shell_name}: {self.process.errorString()}"
+            )
+            self.status_label.setText("🔴 Intérprete no disponible")
+            self.status_label.setStyleSheet("color: #E74C3C; font-weight: bold;")
     
     def execute_command(self):
         """Ejecuta un comando en el terminal"""
@@ -332,8 +464,15 @@ class IntegratedTerminalNew(QWidget):
             self.status_label.setText("🟢 Terminal ejecutándose")
             self.status_label.setStyleSheet("color: #27AE60; font-weight: bold;")
 
-            shell_data = self.shell_combo.currentData()
-            if shell_data == sys.executable or (isinstance(shell_data, str) and shell_data.endswith('python')):
+            banner = getattr(self, "_pending_shell_banner", None)
+            if banner:
+                self._pending_shell_banner = None
+                self.terminal_output.clear()
+                self.terminal_output.append(f"🚀 Iniciando {banner}...")
+                self.terminal_output.append("=" * 50)
+
+            shell_kind = self._shell_kind()
+            if shell_kind == "python":
                 init_commands = [
                     "import sys",
                     "sys.ps1 = '🐍 >>> '",
@@ -342,13 +481,17 @@ class IntegratedTerminalNew(QWidget):
                 ]
                 for cmd in init_commands:
                     self.process.write((cmd + "\n").encode('utf-8'))
+            elif shell_kind == "fish":
+                self.process.write("echo '🐚 Terminal listo!'\n".encode('utf-8'))
             else:
-                self.process.write("echo '🐧 Terminal listo!'\n".encode('utf-8'))
+                self.process.write("echo 'Terminal listo!'\n".encode('utf-8'))
         except Exception as e:
             self.terminal_output.append(f"❌ Error inicializando shell: {e}")
     
     def handle_finished(self, exit_code):
         """Maneja cuando el proceso termina"""
+        if self._shell_switch_pending:
+            return
         self.status_label.setText(f"🔴 Terminal terminado (código: {exit_code})")
         self.status_label.setStyleSheet("color: #E74C3C; font-weight: bold;")
         
@@ -370,8 +513,8 @@ class IntegratedTerminalNew(QWidget):
             
             self.terminal_output.append("\n🔄 Reiniciando terminal...")
             self.terminal_output.append("=" * 40)
-            
-            # Pequeño delay para asegurar limpieza
+
+            self._populate_shell_combo()
             QTimer.singleShot(500, self.start_terminal)
             
         except Exception as e:
@@ -412,10 +555,9 @@ class IntegratedTerminalNew(QWidget):
             self.terminal_output.append("─" * 40)
             
             # Verificar si necesitamos cambiar a Python
-            if self.shell_combo.currentData() != sys.executable:
-                self.shell_combo.setCurrentIndex(0)
-                self.change_shell()
-                # Esperar un poco para que se inicie Python
+            if not self._is_python_repl_shell():
+                py_idx = self._python_combo_index()
+                self._set_shell_combo_index(py_idx)
                 QTimer.singleShot(1000, lambda: self._send_text_to_process(text))
             else:
                 self._send_text_to_process(text)
@@ -501,21 +643,6 @@ class IntegratedTerminalNew(QWidget):
             return path, run_cwd
         return None, run_cwd
 
-    def _is_python_repl_shell(self) -> bool:
-        shell_data = self.shell_combo.currentData()
-        if not isinstance(shell_data, str):
-            return False
-        if shell_data == sys.executable:
-            return True
-        return os.path.basename(shell_data).lower().startswith("python")
-
-    def _bash_combo_index(self) -> int | None:
-        for i in range(self.shell_combo.count()):
-            data = self.shell_combo.itemData(i)
-            if data in ("/bin/bash", "/usr/bin/bash"):
-                return i
-        return None
-
     def _run_program_in_embedded_shell(
         self,
         run_file: str,
@@ -560,7 +687,7 @@ class IntegratedTerminalNew(QWidget):
             bash_idx = self._bash_combo_index()
             if self._is_python_repl_shell() and bash_idx is not None:
                 if self.shell_combo.currentIndex() != bash_idx:
-                    self.shell_combo.setCurrentIndex(bash_idx)
+                    self._set_shell_combo_index(bash_idx)
                     QTimer.singleShot(900, launch)
                     return
             if not self.process or self.process.state() != QProcess.ProcessState.Running:
@@ -748,9 +875,8 @@ class IntegratedTerminalNew(QWidget):
         if run_file:
             return self._run_program_in_embedded_shell(run_file, run_cwd)
         try:
-            if self.shell_combo.currentData() != sys.executable:
-                self.shell_combo.setCurrentIndex(0)
-                self.change_shell()
+            if not self._is_python_repl_shell():
+                self._set_shell_combo_index(self._python_combo_index())
                 QTimer.singleShot(500, lambda: self._run_code_interactive(code))
                 return True
             if not self.process or self.process.state() != QProcess.ProcessState.Running:

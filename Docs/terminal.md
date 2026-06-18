@@ -19,6 +19,12 @@ Antes de ejecutar, si hay cambios sin guardar en un archivo con ruta, se guarda 
 
 Si activas **«Precapturar inputs»**, se muestra un diálogo para rellenar los `input()` antes de lanzar el programa (útil en scripts simples, no en TUIs completas).
 
+## Intérprete del terminal
+
+El desplegable **Intérprete** solo muestra shells instalados en el equipo donde corre Ejecútate! (Python del venv, bash, sh, zsh, fish…). Los que no existan no aparecen en la lista.
+
+La **caja inferior** envía comandos al intérprete activo.
+
 ## Caja de comandos del terminal (manual)
 
 Los controles **Limpio / Interactivo** y **Auto-detect** solo afectan a lo que escribes tú en la caja inferior del terminal, no al botón del editor.

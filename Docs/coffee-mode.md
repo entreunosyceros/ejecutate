@@ -35,5 +35,5 @@ Sin Pomodoro, el Modo Café manual funciona igual que antes: overlay con tu mens
 
 ## Ver también
 - [Atajos de teclado](./shortcuts.md)
-- [Interfaz (status bar y botón ☕)](./ui-cursor.md)
+- [Interfaz del editor (status bar y botón ☕)](./editor-interface.md)
 - [Archivos, pestañas y explorador](./files-and-tabs.md)

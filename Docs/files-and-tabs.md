@@ -72,6 +72,6 @@ Los colores dependen del **tema** activo (Preferencias → Temas). El color base
 
 ## Ver también
 
-- [Interfaz estilo Cursor](./ui-cursor.md)
+- [Interfaz del editor](./editor-interface.md)
 - [Atajos de teclado](./shortcuts.md)
 - [Modo Café y Pomodoro](./coffee-mode.md)

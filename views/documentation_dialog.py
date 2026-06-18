@@ -155,7 +155,7 @@ class DocumentationDialog(QDialog):
         <h3 style="color: #E74C3C;">🌟 Características Principales:</h3>
         <ul>
             <li><strong>📝 Editor con Pestañas:</strong> Varios archivos a la vez, indicador <code>•</code> si hay cambios sin guardar</li>
-            <li><strong>🖥️ Interfaz tipo Cursor/VS Code:</strong> Activity Bar, sidebar (Explorer, Search, Problems, Outline, Aprendizaje) y panel inferior</li>
+            <li><strong>🖥️ Interfaz del editor:</strong> Activity Bar, sidebar (Explorer, Search, Problems, Outline, Aprendizaje) y panel inferior</li>
             <li><strong>🎨 Resaltado de Sintaxis:</strong> Palabras clave, cadenas, comentarios y números con colores del tema</li>
             <li><strong>⚠️ Problems:</strong> Errores y avisos del archivo Python (salto a línea/columna)</li>
             <li><strong>📋 Outline:</strong> Clases y funciones del archivo actual con salto rápido</li>
@@ -281,7 +281,7 @@ class DocumentationDialog(QDialog):
         content = """
         <h2 style="color: #2C3E50;">🖥️ Interfaz del Editor</h2>
         
-        <p>La disposición recuerda a editores como <strong>Cursor</strong> o <strong>VS Code</strong>: barra lateral de iconos, sidebar con pestañas y panel inferior opcional.</p>
+        <p>Disposición en tres zonas: barra lateral de iconos (Activity Bar), panel contextual (sidebar) y panel inferior opcional.</p>
         
         <h3 style="color: #8E44AD;">📐 Layout general</h3>
         <ul>
@@ -354,7 +354,7 @@ class DocumentationDialog(QDialog):
         </ul>
         
         <h3 style="color: #8E44AD;">🔄 Shell y caja de comandos</h3>
-        <p>El desplegable del terminal permite elegir <strong>Python</strong>, <strong>Bash</strong>, Zsh, etc. La <strong>caja inferior</strong> envía comandos al shell activo.</p>
+        <p>El desplegable del terminal lista <strong>solo los intérpretes instalados</strong> en tu sistema (Python, Bash, Sh, Zsh, Fish…). La <strong>caja inferior</strong> envía comandos al shell activo.</p>
         <ul>
             <li><strong>Modo Limpio / Interactivo / Auto-detect:</strong> solo afectan a comandos que <em>tú</em> escribes a mano, no al botón Ejecutar del editor</li>
             <li><strong>Precapturar inputs:</strong> diálogo para rellenar <code>input()</code> antes de lanzar (scripts simples)</li>

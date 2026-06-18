@@ -1,16 +1,16 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-17T21:09:23.417137",
+  "timestamp": "2026-06-18T12:41:44.909549",
   "open_files": [],
   "active_tab_index": 0,
   "window_state": {
     "geometry": {
       "x": 1080,
-      "y": 276,
+      "y": 239,
       "width": 1920,
       "height": 1011
     },
-    "maximized": true,
+    "maximized": false,
     "minimized": false
   },
   "theme": "VS Code Dark",

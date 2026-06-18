@@ -5916,7 +5916,7 @@ class CodeEditorViewPySide:
         # Contenido inicial con características del programa
         initial_content = """🌟 GUÍA RÁPIDA (Getting Started)
 
-🧭 INTERFAZ (estilo VS Code/Cursor)
+🧭 INTERFAZ DEL EDITOR
 • Activity Bar: Explorer / Search / Problems / Outline / Aprendizaje / Terminal / Settings
 • Sidebar: Explorer, Search, Problems, Outline, Aprendizaje
 • Barra superior: carpeta de trabajo + botón ☕ (Modo Café)

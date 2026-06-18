@@ -1,4 +1,4 @@
-# Interfaz estilo Cursor/VS Code
+# Interfaz del editor
 
 - [← Índice](./README.md)
 - [Portada](../README.md)
